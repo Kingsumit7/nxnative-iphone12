@@ -52,7 +52,11 @@ static void test_bc6h_and_bc7(void) {
     assert(nvn_bc_decode_level(NVN_BC6H_UFLOAT, 4, 4, src, 16, dst, 32, &out) == 0);
     assert(out == NVN_BC_OUTPUT_RGBA16_FLOAT);
     assert(((uint16_t *)dst)[3] == 0x3c00);
+    assert(nvn_bc_decode_level(NVN_BC6H_SFLOAT, 4, 4, src, 16, dst, 32, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_RGBA16_FLOAT);
     assert(nvn_bc_decode_level(NVN_BC7_UNORM, 4, 4, src, 16, dst, 16, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_RGBA8);
+    assert(nvn_bc_decode_level(NVN_BC7_SRGB, 4, 4, src, 16, dst, 16, &out) == 0);
     assert(out == NVN_BC_OUTPUT_RGBA8);
 }
 
