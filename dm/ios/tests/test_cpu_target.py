@@ -1,9 +1,8 @@
-"""The iOS app's CPU target: the oldest chip the app supports, not the newest.
+"""The iOS app's CPU target is Apple A14, the oldest supported device class.
 
-dav1d (dm/third_party/dav1d/src/cpu.h) adds every CPU feature the compiler's target promises to the features it detects at run time, so a target newer than
-the device runs instructions the device lacks: with -mcpu=apple-a18, Ocarina of Time's title movie stopped an M1 iPad Pro (no I8MM) with SIGILL in
-put_8tap_neon_i8mm. The oldest supported chip is the M1 (README: an iPad with an M1, an iPhone from the A17 Pro, as the games need BC textures); the host's
-assembly needs LSE atomics (ARMv8.1), which it has."""
+dav1d (dm/third_party/dav1d/src/cpu.h) adds every CPU feature promised by the compiler target to the features it detects at run time. A target newer than
+the device can therefore execute unsupported instructions. A14 provides the LSE atomics required by the host assembly without enabling newer optional
+instruction sets such as I8MM or BF16. Keep the target aligned with the iPhone 12 minimum and test the compiler's feature macros here."""
 import re
 import shutil
 import subprocess
@@ -11,7 +10,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-# What the M1 has (the oldest supported chip) and what it lacks (each promised by a newer target: I8MM and BF16 from the A15, SME from the M4 / A18).
+# A14 must provide LSE atomics for the host assembly and must not promise newer optional instruction sets.
 NEEDED = ('__ARM_FEATURE_ATOMICS',)
 ABSENT = ('__ARM_FEATURE_MATMUL_INT8', '__ARM_FEATURE_BF16_VECTOR_ARITHMETIC', '__ARM_FEATURE_SME')
 
@@ -38,8 +37,12 @@ class CpuTarget(unittest.TestCase):
                 for feature in NEEDED: self.assertIn(feature, m, f'{where}: -mcpu={cpu} lacks {feature} (LSE), which the host assembly uses')
                 for feature in ABSENT: self.assertNotIn(feature, m, f'{where}: -mcpu={cpu} promises {feature}, which an M1 lacks')
 
-    def test_both_builds_use_the_same_target(self):
-        self.assertEqual(len(set(self.targets().values())), 1)
+    def test_both_builds_use_the_a14_target(self):
+        targets = self.targets()
+        self.assertEqual(len(set(targets.values())), 1)
+        for where, cpu in targets.items():
+            with self.subTest(where=where):
+                self.assertEqual(cpu, 'apple-a14')
 
 
 if __name__ == '__main__': unittest.main()
