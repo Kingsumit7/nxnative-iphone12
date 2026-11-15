@@ -18,7 +18,8 @@ typedef enum nvn_astc_profile {
 // dst_size receives the required output size when dimensions and format are valid.
 // Returns 0 on success, -1 for invalid input/profile, -2 for insufficient output,
 // or -3 when the decoder/encoder reports an error.
-// BC6H requires an HDR profile. sRGB BC formats require LDR_SRGB.
+// BC6H requires an HDR profile. sRGB BC formats require LDR_SRGB. Use an HDR
+// profile for signed BC4/BC5 when preserving their negative channel values.
 int nvn_bc_to_astc_image(uint32_t nvn_format, const void *src, size_t src_size,
                          uint32_t width, uint32_t height,
                          nvn_astc_profile profile, float quality,
