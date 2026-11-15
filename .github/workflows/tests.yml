@@ -53,6 +53,10 @@ jobs:
         run: |
           make -C dm/gfx/tex/tests t_tex 2>&1 | tee logs/texture-build.log
           dm/gfx/tex/tests/t_tex 2>&1 | tee logs/texture-tests.log
+      - name: CPU BC1 to BC7 texture decoder tests
+        run: |
+          make -C dm/gfx/tex/tests t_bc_decode 2>&1 | tee logs/bc-decode-build.log
+          dm/gfx/tex/tests/t_bc_decode 2>&1 | tee logs/bc-decode-tests.log
       - name: CPU-only gfx tests (dm/gfx/tests)
         run: |
           mkdir -p logs
