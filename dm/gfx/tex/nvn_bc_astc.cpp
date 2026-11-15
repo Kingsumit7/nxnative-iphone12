@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace {
-bool is_srgb(uint32_t f) { return f >= 0x45 && f <= 0x48 || f == 0x4E; }
+bool is_srgb(uint32_t f) { return (f >= 0x45 && f <= 0x48) || f == 0x4E; }
 bool is_bc6h(uint32_t f) { return f == 0x4F || f == 0x50; }
 bool valid_profile(uint32_t format, nvn_astc_profile profile) {
     if (profile < NVN_ASTC_PROFILE_LDR || profile > NVN_ASTC_PROFILE_HDR) return false;
