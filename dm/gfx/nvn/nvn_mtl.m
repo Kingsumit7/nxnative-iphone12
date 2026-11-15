@@ -25,6 +25,7 @@
 #include "nvn_obj.h"
 #include "../tex/nvn_fmt_mtl.h"
 #include "../tex/nvn_deswizzle.h"
+#include "../tex/nvn_bc_decode.h"
 #include "../tex/nvn_deswizzle_gpu.h"
 #include "nvn_builtin.h"
 #include "host_msl.h"
@@ -2948,9 +2949,34 @@ static int tex_atomic_alias(id<MTLTexture> base) {
         || pf == MTLPixelFormatRG16Unorm || pf == MTLPixelFormatRG16Snorm || pf == MTLPixelFormatRG16Uint || pf == MTLPixelFormatRG16Sint || pf == MTLPixelFormatRG16Float || pf == MTLPixelFormatR32Float;
     return bytes32 && (base.textureType == MTLTextureType2D || base.textureType == MTLTextureType2DArray) && base.sampleCount == 1 && base.storageMode == MTLStorageModePrivate && !base.buffer && !base.isSparse;
 }
+static int nvn_bc_host_format(uint32_t f, uint32_t *pixel_format, nvn_bc_output *output, size_t *bytes_per_pixel) {
+    uint32_t pf; nvn_bc_output out; size_t bpp;
+    switch (f) {
+        case 0x41: case 0x42: case 0x43: case 0x44:
+            pf = MTLPixelFormatRGBA8Unorm; out = NVN_BC_OUTPUT_RGBA8; bpp = 4; break;
+        case 0x45: case 0x46: case 0x47: case 0x48:
+        case 0x4e:
+            pf = MTLPixelFormatRGBA8Unorm_sRGB; out = NVN_BC_OUTPUT_RGBA8; bpp = 4; break;
+        case 0x49: pf = MTLPixelFormatR8Unorm; out = NVN_BC_OUTPUT_R8; bpp = 1; break;
+        case 0x4a: pf = MTLPixelFormatR8Snorm; out = NVN_BC_OUTPUT_R8_SNORM; bpp = 1; break;
+        case 0x4b: pf = MTLPixelFormatRG8Unorm; out = NVN_BC_OUTPUT_RG8; bpp = 2; break;
+        case 0x4c: pf = MTLPixelFormatRG8Snorm; out = NVN_BC_OUTPUT_RG8_SNORM; bpp = 2; break;
+        case 0x4d: pf = MTLPixelFormatRGBA8Unorm; out = NVN_BC_OUTPUT_RGBA8; bpp = 4; break;
+        case 0x4f: case 0x50:
+            pf = MTLPixelFormatRGBA16Float; out = NVN_BC_OUTPUT_RGBA16_FLOAT; bpp = 8; break;
+        default: return 0;
+    }
+    if (pixel_format) *pixel_format = pf;
+    if (output) *output = out;
+    if (bytes_per_pixel) *bytes_per_pixel = bpp;
+    return 1;
+}
 static MTLTextureDescriptor *tex_desc(const tex_t *t, int packaged) {
     uint32_t pf = 0; uint8_t swz[4];
     if (!nvn_fmt_to_mtl(t->d.format, &pf, swz) || !pf) { RED_ONCE(0, "texture format %#x has no Metal equivalent (first case)", t->d.format); return nil; }
+    // A14 and earlier iPhones have no BC texture sampling. Decode BC blocks on the CPU
+    // and store ordinary Metal textures instead of refusing to launch.
+    if (!g_dev.supportsBCTextureCompression) nvn_bc_host_format(t->d.format, &pf, NULL, NULL);
     // Metal's limits: 16384 in 2D, 2048 in 3D, 2048 array layers; beyond them Metal aborts the process on an assertion, so they are caught here with a red line
     if (t->d.width > 16384 || t->d.height > 16384 || t->d.depth > 2048) { RED_ONCE(71, "texture size exceeds Metal limits: %u×%u×%u levels %u format %#x target %d (first case ser=%llu)", t->d.width, t->d.height, t->d.depth, t->d.levels, t->d.format, t->d.target, (unsigned long long)t->serial); return nil; }
     MTLTextureDescriptor *d = [MTLTextureDescriptor new];
@@ -3532,10 +3558,13 @@ static uint8_t *pkg_written(const tex_t *t, const void *span, uint64_t since, un
 static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture> reuse, MTLTextureUsage keep, id<MTLTexture> prev, const void *span, uint64_t since, unsigned *taken) {
     MTLTextureDescriptor *d = tex_desc(t, 1);
     if (!d) return nil;
+    uint32_t bc_host_pf = 0; nvn_bc_output bc_output = NVN_BC_OUTPUT_RGBA8; size_t bc_bpp = 0;
+    int bc_fallback = !g_dev.supportsBCTextureCompression &&
+                      nvn_bc_host_format(t->d.format, &bc_host_pf, &bc_output, &bc_bpp);
     d.usage |= keep & (MTLTextureUsageRenderTarget | MTLTextureUsagePixelFormatView);
     int rb_shift = rb_packed_shift(t->d.format);   // the RGB565 family is repacked into Metal's order on the CPU (rb_packed_shift)
     int linear = (t->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) != 0;   // linear storage no view could take (linear_fit): its rows are copied on the CPU
-    int direct = !linear && !rb_shift && stamp && direct_upload_on() && g_nvn_deswz_gpu && !(t->pool && nvn_sparse_pool(t->pool)) && nvn_deswz_gpu_direct_supported(&t->d);
+    int direct = !bc_fallback && !linear && !rb_shift && stamp && direct_upload_on() && g_nvn_deswz_gpu && !(t->pool && nvn_sparse_pool(t->pool)) && nvn_deswz_gpu_direct_supported(&t->d);
     if (direct) d.usage |= MTLTextureUsageShaderWrite | MTLTextureUsagePixelFormatView;
     id<MTLTexture> mt = reuse && reuse.pixelFormat == d.pixelFormat && reuse.width == d.width && reuse.height == d.height && reuse.mipmapLevelCount == d.mipmapLevelCount && reuse.textureType == d.textureType
                         && (reuse.usage & d.usage) == d.usage
@@ -3563,25 +3592,26 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
     for (unsigned l = 0; l < d.mipmapLevelCount; l++) {
         uint32_t w, h, z; tex_lsize(t, l, &w, &h, &z);
         unsigned n = layers; if (need) { n = 0; for (unsigned y = 0; y < layers; y++) n += need[l * layers + y]; }
-        total += (size_t)((w + bw - 1) / bw) * bpb * ((h + bh - 1) / bh) * z * n;
+        if (bc_fallback) total += (size_t)w * h * z * bc_bpp * n;
+        else total += (size_t)((w + bw - 1) / bw) * bpb * ((h + bh - 1) / bh) * z * n;
     }
     g_bp_up_bytes += total;
     void *mb; uint64_t mo;
     // A texture in a large pool (BIG_MIN) or one that holds only textures is read through a buffer of its own, held by the upload batch: a one-time read must not leave that memory wired for good
     id<MTLBuffer> upsrc = nil; unsigned src_batch = 0;   // the upload batch that holds upsrc (g_up_seq)
-    if (!linear && !rb_shift && !sparse && g_nvn_deswz_gpu) { up_begin(); src_batch = g_up_seq; upsrc = up_big_src((uint64_t)t->mem, t->L.size, &mo); if (upsrc) mb = (__bridge void *)upsrc; }
+    if (!bc_fallback && !linear && !rb_shift && !sparse && g_nvn_deswz_gpu) { up_begin(); src_batch = g_up_seq; upsrc = up_big_src((uint64_t)t->mem, t->L.size, &mo); if (upsrc) mb = (__bridge void *)upsrc; }
     // A sparse pool's texture is gathered on the GPU through its page table (sp_pages_gpu), but on the CPU for DM_NVN_ZBLOCK, which counts its blocks there
     uint64_t *spt = NULL, spn = 0;
     t_tex_upload_lookup = 1;
-    if (sparse && !linear && !rb_shift && g_nvn_deswz_gpu && sp_gather_pso() && !((uintptr_t)t->mem & 15) && !(zblock_on() && t->d.format >= 0x79 && t->d.format <= 0x94)) {
+    if (!bc_fallback && sparse && !linear && !rb_shift && g_nvn_deswz_gpu && sp_gather_pso() && !((uintptr_t)t->mem & 15) && !(zblock_on() && t->d.format >= 0x79 && t->d.format <= 0x94)) {
         spn = sp_pages_n((uint64_t)(uintptr_t)t->mem, t->L.size);
         if (!(spt = malloc((size_t)spn * sizeof *spt))) MDIE("sparse page table of %llu pages", (unsigned long long)spn);
         up_begin(); src_batch = g_up_seq;
         if (!sp_pages_gpu(t->pool, (uint64_t)(uintptr_t)t->mem, t->L.size, spt, 0)) { free(spt); spt = NULL; }
     }
-    int use_gpu = !linear && !rb_shift && g_nvn_deswz_gpu && (sparse ? spt != NULL : upsrc || mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo));
+    int use_gpu = !bc_fallback && !linear && !rb_shift && g_nvn_deswz_gpu && (sparse ? spt != NULL : upsrc || mtl_addr((uint64_t)t->mem, t->L.size, &mb, &mo));
     t_tex_upload_lookup = 0;
-    if (g_nvn_deswz_gpu && !use_gpu && !sparse && !rb_shift && !linear) RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
+    if (!bc_fallback && g_nvn_deswz_gpu && !use_gpu && !sparse && !rb_shift && !linear) RED_ONCE(40, "swizzled texture storage is not in a memory pool; falling back to the CPU");
     if (use_gpu) {
         // The GPU reads the memory pool at execution time, which is closer to a real Switch than a snapshot at CPU upload time; the dirty-page stamp is still taken before encoding, and later writes still trigger a re-upload.
         up_begin();
@@ -3652,7 +3682,36 @@ static id<MTLTexture> pkg_upload_(const tex_t *t, uint64_t *stamp, id<MTLTexture
         size_t pitch = (size_t)((w + bw - 1) / bw) * bpb, rows = (h + bh - 1) / bh;
         for (unsigned y = 0; y < layers; y++) {
             if (need && !need[l * layers + y]) { up_copy_add(prev, MTLSizeMake(w, h, z), mt, y, l); continue; }
-            if (linear) {   // one 2D level (linear_fit): rows of the storage's stride, the same pitch GetStorageSize counts
+            if (bc_fallback) {
+                size_t src_pitch = (size_t)((w + bw - 1) / bw) * bpb;
+                size_t src_rows = (h + bh - 1) / bh;
+                size_t src_image = src_pitch * src_rows;
+                size_t dst_pitch = (size_t)w * bc_bpp;
+                size_t dst_image = dst_pitch * h;
+                uint8_t *compressed = malloc(src_image * z);
+                if (!compressed) { RED_ONCE(170, "BC texture decode allocation failed (%ux%ux%u format %#x)", w, h, z, t->d.format); free(part); free(need); return nil; }
+                int decoded = 0;
+                if (linear) {
+                    size_t srow = tex_linear_row(t);
+                    if (l || y || z != 1 || srow < src_pitch || srow * src_rows > t->L.size) decoded = -1;
+                    else for (size_t r = 0; r < src_rows; r++) memcpy(compressed + r * src_pitch, src + r * srow, src_pitch);
+                } else decoded = nvn_deswizzle(&t->d, l, y, src, compressed, src_pitch);
+                for (uint32_t slice = 0; !decoded && slice < z; slice++) {
+                    nvn_bc_output actual = NVN_BC_OUTPUT_RGBA8;
+                    decoded = nvn_bc_decode_level(t->d.format, w, h,
+                        compressed + (size_t)slice * src_image, src_image,
+                        (uint8_t *)stg.contents + off + (size_t)slice * dst_image,
+                        dst_pitch, &actual);
+                    if (!decoded && actual != bc_output) decoded = -1;
+                }
+                free(compressed);
+                if (decoded) {
+                    RED_ONCE(171, "BC texture decode failed format %#x target %d level %u", t->d.format, t->d.target, l);
+                    free(part); free(need); return nil;
+                }
+                up_blit_add(stg, off, dst_pitch, dst_image, MTLSizeMake(w, h, z), mt, y, l);
+                off += dst_image * z;
+            } else if (linear) {   // one 2D level (linear_fit): rows of the storage's stride, the same pitch GetStorageSize counts
                 size_t srow = tex_linear_row(t);
                 if (l || y || z != 1 || srow < pitch || srow * rows > t->L.size) { RED_ONCE(153, "linear texture upload: %ux%u format %#x target %d levels %u is not one 2D level of rows (stride %zu)", t->d.width, t->d.height, t->d.format, t->d.target, t->d.levels, srow); break; }
                 for (size_t r = 0; r < rows; r++) memcpy((uint8_t *)stg.contents + off + r * pitch, src + r * srow, pitch);
