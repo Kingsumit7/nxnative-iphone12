@@ -10,8 +10,11 @@
 namespace {
 bool profile_matches(uint32_t format, uint32_t profile) {
     const bool srgb = (format >= 0x45 && format <= 0x48) || format == 0x4E;
-    const bool hdr = format == 0x4F || format == 0x50 ||
-                     format == 0x4A || format == 0x4C;
+    // ASTC stores unsigned values. It cannot preserve the negative values in
+    // signed BC4, BC5, or BC6H, so reject those formats rather than silently
+    // producing a visually plausible but numerically incorrect texture.
+    if (format == 0x4A || format == 0x4C || format == 0x4F) return false;
+    const bool hdr = format == 0x50;
     if (srgb) return profile == ASTCENC_PRF_LDR_SRGB;
     if (hdr) return profile == ASTCENC_PRF_HDR_RGB_LDR_A ||
                      profile == ASTCENC_PRF_HDR;
