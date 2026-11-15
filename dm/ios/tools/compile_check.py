@@ -35,8 +35,7 @@ def one(s):
     is_cxx = s.endswith('.cpp')
     compiler = 'clang++' if is_cxx else 'clang'
     source_flags = cxx_flags if is_cxx else []
-    c = ['xcrun', '-sdk', 'iphoneos', compiler] + flags + source_flags + (['-Dmain=dm_main'] if s == os.path.join(host, 'main.c') else []) + ['-c', s, '-o', '/dev/null']
-    if s.endswith('.c'): c[5:5] = ['-std=gnu11']
+    c = ['xcrun', '-sdk', 'iphoneos', compiler] + (['-std=gnu11'] if s.endswith('.c') else []) + flags + source_flags + (['-Dmain=dm_main'] if s == os.path.join(host, 'main.c') else []) + ['-c', s, '-o', '/dev/null']
     p = subprocess.run(c, capture_output=True, text=True)
     return s, p.returncode, p.stderr
 bad = 0
