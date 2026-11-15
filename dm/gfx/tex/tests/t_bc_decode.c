@@ -16,6 +16,17 @@ static void test_bc1_opaque_and_crop(void) {
     for (int i = 0; i < 6; i++) assert(dst[i * 4 + 3] == 255);
 }
 
+static void test_bc2_and_bc3(void) {
+    uint8_t src[16] = {0}, dst[4 * 4 * 4] = {0};
+    nvn_bc_output out;
+    assert(nvn_bc_decode_level(NVN_BC_DXT3, 4, 4, src, sizeof src,
+                               dst, 4 * 4, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_RGBA8);
+    assert(nvn_bc_decode_level(NVN_BC_DXT5, 4, 4, src, sizeof src,
+                               dst, 4 * 4, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_RGBA8);
+}
+
 static void test_rejects_short_source_and_pitch(void) {
     uint8_t src[8] = {0}, dst[64] = {0};
     assert(nvn_bc_decode_level(NVN_BC_DXT1_RGBA, 4, 4, src, 7, dst, 16, NULL) == -1);
@@ -47,6 +58,7 @@ static void test_bc6h_and_bc7(void) {
 
 int main(void) {
     test_bc1_opaque_and_crop();
+    test_bc2_and_bc3();
     test_rejects_short_source_and_pitch();
     test_bc4_and_bc5_outputs();
     test_bc6h_and_bc7();
