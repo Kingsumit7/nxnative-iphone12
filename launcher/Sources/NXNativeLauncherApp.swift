@@ -21,9 +21,12 @@ private final class LauncherModel: ObservableObject {
     @Published var log = ""
     @Published var status = "Ready"
     @Published var isBuilding = false
+    @Published var progressFraction: Double?
+    @Published var progressLabel = "Ready"
     @Published var errorMessage: String?
 
     private var process: Process?
+    private var pendingProgressLine = ""
 
     private let gamesKey = "library.games"
     private let repositoryKey = "repository.path"
@@ -171,6 +174,9 @@ private final class LauncherModel: ObservableObject {
         }
 
         log = ""
+        pendingProgressLine = ""
+        progressFraction = nil
+        progressLabel = "Starting build"
         status = "Building \(game.name)…"
         isBuilding = true
         process = task
@@ -208,6 +214,46 @@ private final class LauncherModel: ObservableObject {
         log += value
         if log.count > 100_000 {
             log = String(log.suffix(80_000))
+        }
+
+        pendingProgressLine += value
+        let lines = pendingProgressLine.components(separatedBy: "\n")
+        pendingProgressLine = lines.last ?? ""
+        for line in lines.dropLast() {
+            updateProgress(from: line)
+        }
+    }
+
+    private func updateProgress(from line: String) {
+        guard let data = line.data(using: .utf8),
+              let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = event["ev"] as? String else { return }
+
+        switch type {
+        case "stage":
+            let name = event["name"] as? String ?? "Building"
+            let index = event["k"] as? Int ?? 0
+            let count = event["n"] as? Int ?? 0
+            progressLabel = count > 0 ? "[\(index)/\(count)] \(name)" : name
+            progressFraction = nil
+        case "step":
+            let name = event["name"] as? String ?? ""
+            let step = event["step"] as? String ?? ""
+            progressLabel = [name, step].filter { !$0.isEmpty }.joined(separator: " · ")
+        case "progress":
+            let name = event["name"] as? String ?? "Building"
+            let step = event["step"] as? String ?? ""
+            progressLabel = [name, step].filter { !$0.isEmpty }.joined(separator: " · ")
+            if let fraction = event["frac"] as? NSNumber {
+                progressFraction = min(max(fraction.doubleValue, 0), 1)
+            }
+        case "stage_end":
+            let name = event["name"] as? String ?? "Stage"
+            let succeeded = event["ok"] as? Bool ?? false
+            progressLabel = succeeded ? "\(name) completed" : "\(name) failed"
+            if succeeded { progressFraction = 1 }
+        default:
+            break
         }
     }
 
@@ -366,6 +412,12 @@ private struct LauncherView: View {
                         }
                         Spacer()
                         Text(model.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if model.isBuilding {
+                        ProgressView(value: model.progressFraction)
+                        Text(model.progressLabel)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
