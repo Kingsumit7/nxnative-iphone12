@@ -7,8 +7,15 @@
 extern "C" {
 #endif
 
+// Resolve a supported NVN BC format to the matching NVN ASTC 4x4 format and
+// canonical ASTC Encoder profile. Returns 0 on success, -1 for unsupported
+// formats or null output pointers. Signed BC4, BC5, and BC6H are unsupported
+// because ASTC cannot preserve their negative values.
+int nvn_bc_to_astc_format(uint32_t nvn_format, uint32_t *astc_nvn_format,
+                          uint32_t *astc_profile);
+
 // Profiles are the ASTC Encoder profile values. Use LDR for linear BC formats,
-// LDR_SRGB for sRGB BC formats, and HDR_RGB_LDR_A for BC6H or signed BC4/BC5.
+// LDR_SRGB for sRGB BC formats, and HDR_RGB_LDR_A or HDR for unsigned BC6H.
 // Returns 0 on success, -1 on invalid input/profile/encoding failure, and -2
 // when dst_capacity is too small. On success or -2, *dst_size receives the
 // required/produced tightly packed ASTC 4x4 byte count.
