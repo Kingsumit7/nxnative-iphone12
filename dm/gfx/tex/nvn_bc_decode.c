@@ -49,35 +49,35 @@ int nvn_bc_decode_image(uint32_t format, const void *src, size_t src_size,
     for (size_t by = 0; by < blocks_y; ++by) for (size_t bx = 0; bx < blocks_x; ++bx) {
         const uint8_t *block = input + (by * blocks_x + bx) * block_bytes;
         float decoded_f[4 * 4 * 4];
-        uint8_t decoded_u8[4 * 4 * 4];
+        union { uint32_t align; uint8_t bytes[4 * 4 * 4]; } decoded_u8;
         if (kind == 1 || kind == 2 || kind == 3 || kind == 7) {
-            if (kind == 1) bcdec_bc1(block, decoded_u8, 16);
-            else if (kind == 2) bcdec_bc2(block, decoded_u8, 16);
-            else if (kind == 3) bcdec_bc3(block, decoded_u8, 16);
-            else bcdec_bc7(block, decoded_u8, 16);
+            if (kind == 1) bcdec_bc1(block, decoded_u8.bytes, 16);
+            else if (kind == 2) bcdec_bc2(block, decoded_u8.bytes, 16);
+            else if (kind == 3) bcdec_bc3(block, decoded_u8.bytes, 16);
+            else bcdec_bc7(block, decoded_u8.bytes, 16);
             for (unsigned py = 0; py < 4; ++py) for (unsigned px = 0; px < 4; ++px) {
-                const uint8_t *p = decoded_u8 + (py * 4u + px) * 4u;
+                const uint8_t *p = decoded_u8.bytes + (py * 4u + px) * 4u;
                 float *q = decoded_f + (py * 4u + px) * 4u;
                 q[0] = p[0] / 255.0f; q[1] = p[1] / 255.0f; q[2] = p[2] / 255.0f;
                 q[3] = opaque ? 1.0f : p[3] / 255.0f;
             }
         } else if (kind == 4) {
             float channel[16];
-            bcdec_bc4_float(block, channel, 4 * (int)sizeof(float), is_signed);
+            bcdec_bc4_float(block, channel, 4, is_signed);
             for (unsigned i = 0; i < 16; ++i) {
                 decoded_f[i * 4 + 0] = channel[i]; decoded_f[i * 4 + 1] = 0.0f;
                 decoded_f[i * 4 + 2] = 0.0f; decoded_f[i * 4 + 3] = 1.0f;
             }
         } else if (kind == 5) {
             float channels[16 * 2];
-            bcdec_bc5_float(block, channels, 4 * 2 * (int)sizeof(float), is_signed);
+            bcdec_bc5_float(block, channels, 8, is_signed);
             for (unsigned i = 0; i < 16; ++i) {
                 decoded_f[i * 4 + 0] = channels[i * 2 + 0]; decoded_f[i * 4 + 1] = channels[i * 2 + 1];
                 decoded_f[i * 4 + 2] = 0.0f; decoded_f[i * 4 + 3] = 1.0f;
             }
         } else {
             float rgb[16 * 3];
-            bcdec_bc6h_float(block, rgb, 4 * 3 * (int)sizeof(float), is_signed);
+            bcdec_bc6h_float(block, rgb, 12, is_signed);
             for (unsigned i = 0; i < 16; ++i) {
                 decoded_f[i * 4 + 0] = rgb[i * 3 + 0]; decoded_f[i * 4 + 1] = rgb[i * 3 + 1];
                 decoded_f[i * 4 + 2] = rgb[i * 3 + 2]; decoded_f[i * 4 + 3] = 1.0f;
