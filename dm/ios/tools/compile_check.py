@@ -15,14 +15,16 @@ subprocess.run(['make', '-s', '-C', host, 'game_profile', 'host_msl', 'MSL_SDK=i
 cmd = subprocess.run(['make', '-s', '-n', '-B', '-C', host, 'dmhost', 'MSL_SDK=iphoneos'], capture_output=True, text=True, check=True, env=env).stdout
 lines = [shlex.split(l) for l in cmd.splitlines() if l.lstrip().startswith('clang')]
 lines.sort(key=lambda t: any(a.startswith(('gen/vpx/', 'gen/dav1d/')) for a in t))   # the host's own commands first, as gen_build.py does, so its header paths come before the libraries'
-srcs, incs, defs = [], [], []
+srcs, incs, defs, cxx_flags = [], [], [], []
 for toks in lines:
+    is_cxx = any(t.endswith('.cpp') for t in toks)
     for t in toks:
         if t.startswith('-I'):
             d = os.path.normpath(os.path.join(host, t[2:]))
             if d not in incs: incs.append(d)
-        elif t.startswith('-D'): defs.append(t)
-        elif t.endswith(('.c', '.m', '.S')): srcs.append(os.path.normpath(os.path.join(host, t)))
+        elif t.startswith('-D'): (cxx_flags if is_cxx else defs).append(t)
+        elif is_cxx and (t.startswith('-std=') or t == '-pthread'): cxx_flags.append(t)
+        elif t.endswith(('.c', '.m', '.S', '.cpp')): srcs.append(os.path.normpath(os.path.join(host, t)))
 assert srcs, 'no source files in the compile commands'
 ios_src = os.path.normpath(f'{ios}/Sources')
 srcs = [s for s in dict.fromkeys(srcs) if not os.path.splitext(s)[0].endswith('_mac') and os.path.dirname(s) != ios_src]
@@ -30,8 +32,11 @@ srcs += sorted(os.path.join(ios_src, f) for f in os.listdir(ios_src) if f.endswi
 dirs = list(dict.fromkeys(os.path.dirname(s) for s in srcs))
 flags = ['-arch', 'arm64', '-miphoneos-version-min=26.0', '-mcpu=apple-a14', '-fobjc-arc', '-O1', '-w'] + defs + [f'-I{d}' for d in incs + dirs]
 def one(s):
-    c = ['xcrun', '-sdk', 'iphoneos', 'clang'] + flags + (['-Dmain=dm_main'] if s == os.path.join(host, 'main.c') else []) + ['-c', s, '-o', '/dev/null']
-    if s.endswith('.c'): c[4:4] = ['-std=gnu11']
+    is_cxx = s.endswith('.cpp')
+    compiler = 'clang++' if is_cxx else 'clang'
+    source_flags = cxx_flags if is_cxx else []
+    c = ['xcrun', '-sdk', 'iphoneos', compiler] + flags + source_flags + (['-Dmain=dm_main'] if s == os.path.join(host, 'main.c') else []) + ['-c', s, '-o', '/dev/null']
+    if s.endswith('.c'): c[5:5] = ['-std=gnu11']
     p = subprocess.run(c, capture_output=True, text=True)
     return s, p.returncode, p.stderr
 bad = 0
