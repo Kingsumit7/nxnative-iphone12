@@ -2,7 +2,7 @@
 # without hand-copying lists: when the Makefile changes, the next iOS build follows automatically.
 #   Gen/src/<flat name>   symlinks to source files (excluding main.c and front_mac.m; main.c is linked separately to Gen/main/main.c and compiled with -Dmain=dm_main)
 #   stdout            xcconfig lines: HEADER_SEARCH_PATHS (-I directories + the directory of every source file, so relative includes resolve as usual),
-#                     OTHER_CFLAGS (-D), frameworks (only those the iOS SDK has: a Mac-only one, such as Cocoa, which the UIKit side replaces, or IOBluetooth,
+#                     OTHER_CFLAGS / OTHER_CPLUSPLUSFLAGS (-D and C++ standard), frameworks (only those the iOS SDK has: a Mac-only one, such as Cocoa, which the UIKit side replaces, or IOBluetooth,
 #                     which only Mac code under TARGET_OS_OSX uses, would fail the link; each one left out is named on stderr)
 # Usage: gen_build.py <dm/host dir> <Gen dir>
 import os, shlex, subprocess, sys
@@ -15,8 +15,9 @@ cmd = subprocess.run(['make', '-s', '-n', '-B', '-C', host, 'dmhost', 'MSL_SDK=i
 # gen/vpx and gen/dav1d): header paths keep this order, so the host's headers are found first
 lines = [shlex.split(l) for l in cmd.splitlines() if l.lstrip().startswith('clang')]
 lines.sort(key=lambda t: any(a.startswith(('gen/vpx/', 'gen/dav1d/')) for a in t))
-srcs, incs, defs, fws = [], [], [], []
+srcs, incs, defs, cxx_flags, fws = [], [], [], [], []
 for toks in lines:
+    is_cxx = any(t.endswith('.cpp') for t in toks)
     i = 0
     while i < len(toks):
         t = toks[i]
@@ -24,8 +25,11 @@ for toks in lines:
         if t.startswith('-I'):
             d = os.path.normpath(os.path.join(host, t[2:]))
             if d not in incs: incs.append(d)
-        elif t.startswith('-D'): defs.append(t)
-        elif t.endswith(('.c', '.m', '.S')): srcs.append(os.path.normpath(os.path.join(host, t)))
+        elif t.startswith('-D'):
+            (cxx_flags if is_cxx else defs).append(t)
+        elif is_cxx and (t.startswith('-std=') or t == '-pthread'):
+            cxx_flags.append(t)
+        elif t.endswith(('.c', '.m', '.S', '.cpp')): srcs.append(os.path.normpath(os.path.join(host, t)))
         i += 1
 assert srcs, 'no source files in the compile command'
 dup = sorted({s for s in srcs if srcs.count(s) > 1})
@@ -42,7 +46,8 @@ for s in srcs:
     flat = os.path.relpath(s, os.path.dirname(host)).replace('/', '__')   # Same-named files in different directories do not collide
     os.symlink(s, f'{gen}/src/{flat}')
 print('HEADER_SEARCH_PATHS = $(inherited) ' + ' '.join(f'"{d}"' for d in incs + dirs))
-print('OTHER_CFLAGS = $(inherited) ' + ' '.join(defs))
+print('OTHER_CFLAGS = $(inherited) ' + ' '.join(dict.fromkeys(defs)))
+if cxx_flags: print('OTHER_CPLUSPLUSFLAGS = $(inherited) ' + ' '.join(dict.fromkeys(cxx_flags)))
 sdk = subprocess.run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], capture_output=True, text=True, check=True).stdout.strip()
 fws = list(dict.fromkeys(fws))
 mac_only = [f for f in fws if not os.path.isdir(f'{sdk}/System/Library/Frameworks/{f}.framework')]
