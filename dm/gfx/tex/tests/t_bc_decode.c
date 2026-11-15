@@ -29,10 +29,10 @@ static void test_bc4_and_bc5_outputs(void) {
     assert(out == NVN_BC_OUTPUT_R8);
     assert(nvn_bc_decode_level(NVN_BC5_UNORM, 4, 4, src, 16, dst, 8, &out) == 0);
     assert(out == NVN_BC_OUTPUT_RG8);
-    assert(nvn_bc_decode_level(NVN_BC4_SNORM, 4, 4, src, 8, dst, 16, &out) == 0);
-    assert(out == NVN_BC_OUTPUT_R32_FLOAT);
-    assert(nvn_bc_decode_level(NVN_BC5_SNORM, 4, 4, src, 16, dst, 32, &out) == 0);
-    assert(out == NVN_BC_OUTPUT_RG32_FLOAT);
+    assert(nvn_bc_decode_level(NVN_BC4_SNORM, 4, 4, src, 8, dst, 4, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_R8_SNORM);
+    assert(nvn_bc_decode_level(NVN_BC5_SNORM, 4, 4, src, 16, dst, 8, &out) == 0);
+    assert(out == NVN_BC_OUTPUT_RG8_SNORM);
 }
 
 static void test_bc6h_and_bc7(void) {
