@@ -1,0 +1,40 @@
+name: BC to ASTC transcoder tests
+
+on:
+  push:
+    branches: [a14-launcher-prototype]
+    paths:
+      - "dm/gfx/tex/nvn_bc_decode.*"
+      - "dm/gfx/tex/nvn_bc_to_astc.*"
+      - "dm/gfx/tex/tests/t_bc_to_astc.cpp"
+      - "dm/third_party/bcdec/**"
+      - "dm/third_party/astc-encoder/**"
+      - ".github/workflows/bc-to-astc.yml"
+  pull_request:
+    paths:
+      - "dm/gfx/tex/nvn_bc_decode.*"
+      - "dm/gfx/tex/nvn_bc_to_astc.*"
+      - "dm/gfx/tex/tests/t_bc_to_astc.cpp"
+      - "dm/third_party/bcdec/**"
+      - "dm/third_party/astc-encoder/**"
+      - ".github/workflows/bc-to-astc.yml"
+  workflow_dispatch:
+
+jobs:
+  transcode:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile BC decoder and BC-to-ASTC transcoder
+        working-directory: dm
+        run: |
+          clang -O2 -Wall -Wextra -c gfx/tex/nvn_bc_decode.c -o /tmp/nvn_bc_decode.o
+          clang++ -O2 -Wall -Wextra -std=c++14 -fno-fast-math -pthread \
+            -DASTCENC_NEON=0 -DASTCENC_SVE=0 -DASTCENC_SSE=0 \
+            -DASTCENC_AVX=0 -DASTCENC_POPCNT=0 -DASTCENC_F16C=0 \
+            gfx/tex/nvn_bc_to_astc.cpp gfx/tex/tests/t_bc_to_astc.cpp \
+            third_party/astc-encoder/Source/astcenc_*.cpp \
+            /tmp/nvn_bc_decode.o -Igfx/tex \
+            -Ithird_party/astc-encoder/Source -o /tmp/nxnative-bc-to-astc-test
+      - name: Run end-to-end transcoding tests
+        run: /tmp/nxnative-bc-to-astc-test
