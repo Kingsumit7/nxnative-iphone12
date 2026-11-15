@@ -30,11 +30,20 @@ static bool run_case(uint32_t format, uint32_t profile) {
 int main() {
     unsigned supported = 0;
     for (uint32_t f = 0x41; f <= 0x50; ++f) {
-        if (f == 0x4A || f == 0x4C || f == 0x4F) continue;
-        uint32_t profile = ASTCENC_PRF_LDR;
-        if ((f >= 0x45 && f <= 0x48) || f == 0x4E)
-            profile = ASTCENC_PRF_LDR_SRGB;
-        if (f == 0x50) profile = ASTCENC_PRF_HDR_RGB_LDR_A;
+        uint32_t astc_format = 0, profile = 0;
+        if (f == 0x4A || f == 0x4C || f == 0x4F) {
+            if (nvn_bc_to_astc_format(f, &astc_format, &profile) != -1) return 6;
+            continue;
+        }
+        if (nvn_bc_to_astc_format(f, &astc_format, &profile) != 0) return 7;
+        const uint32_t expected_format =
+            ((f >= 0x45 && f <= 0x48) || f == 0x4E) ? 0x87u : 0x79u;
+        if (astc_format != expected_format) return 8;
+        if (f == 0x50 && profile != ASTCENC_PRF_HDR_RGB_LDR_A) return 9;
+        if (f != 0x50 && f != 0x4E && f < 0x45 &&
+            profile != ASTCENC_PRF_LDR) return 10;
+        if (((f >= 0x45 && f <= 0x48) || f == 0x4E) &&
+            profile != ASTCENC_PRF_LDR_SRGB) return 11;
         if (!run_case(f, profile)) return 1;
         ++supported;
     }
@@ -57,6 +66,6 @@ int main() {
     if (nvn_bc_to_astc_image(0x41, input, 7, 5, 3, ASTCENC_PRF_LDR,
                              ASTCENC_PRE_FAST, output, sizeof(output),
                              &output_size) != -1) return 4;
-    std::printf("PASS: %u unsigned/sRGB BC formats to ASTC 4x4; signed BC4/5/6H rejected; profile and bounds checks\\n", supported);
+    std::printf("PASS: %u unsigned/sRGB BC formats to ASTC 4x4; format mapping, signed BC4/5/6H rejection, profile and bounds checks\\n", supported);
     return 0;
 }
