@@ -31,11 +31,11 @@ static int bc_format_for_nvn(int f, bc_format *out) {
         case NVN_BC4_UNORM:
             v = (bc_format){8, 1, NVN_BC_OUTPUT_R8, 4, 0}; break;
         case NVN_BC4_SNORM:
-            v = (bc_format){8, 4, NVN_BC_OUTPUT_R32_FLOAT, 4, 0}; break;
+            v = (bc_format){8, 1, NVN_BC_OUTPUT_R8_SNORM, 4, 0}; break;
         case NVN_BC5_UNORM:
             v = (bc_format){16, 2, NVN_BC_OUTPUT_RG8, 5, 0}; break;
         case NVN_BC5_SNORM:
-            v = (bc_format){16, 8, NVN_BC_OUTPUT_RG32_FLOAT, 5, 0}; break;
+            v = (bc_format){16, 2, NVN_BC_OUTPUT_RG8_SNORM, 5, 0}; break;
         case NVN_BC6H_SFLOAT:
         case NVN_BC6H_UFLOAT:
             v = (bc_format){16, 8, NVN_BC_OUTPUT_RGBA16_FLOAT, 6, f == NVN_BC6H_SFLOAT}; break;
@@ -55,6 +55,8 @@ static size_t bytes_per_pixel(nvn_bc_output f) {
         case NVN_BC_OUTPUT_R32_FLOAT: return 4;
         case NVN_BC_OUTPUT_RG32_FLOAT: return 8;
         case NVN_BC_OUTPUT_RGBA16_FLOAT: return 8;
+        case NVN_BC_OUTPUT_R8_SNORM: return 1;
+        case NVN_BC_OUTPUT_RG8_SNORM: return 2;
     }
     return 0;
 }
@@ -96,20 +98,12 @@ int nvn_bc_decode_level(int format, uint32_t width, uint32_t height,
                 case 2: bcdec_bc2(block, block_rgba, 16); decoded = block_rgba; decoded_pitch = 16; break;
                 case 3: bcdec_bc3(block, block_rgba, 16); decoded = block_rgba; decoded_pitch = 16; break;
                 case 4:
-                    if (format == NVN_BC4_SNORM) {
-                        bcdec_bc4_float(block, block_rf, 4 * (int)sizeof(float), 1);
-                        decoded = block_rf; decoded_pitch = 4 * sizeof(float);
-                    } else {
-                        bcdec_bc4(block, block_r, 4, 0); decoded = block_r; decoded_pitch = 4;
-                    }
+                    bcdec_bc4(block, block_r, 4, format == NVN_BC4_SNORM);
+                    decoded = block_r; decoded_pitch = 4;
                     break;
                 case 5:
-                    if (format == NVN_BC5_SNORM) {
-                        bcdec_bc5_float(block, block_rgf, 8 * (int)sizeof(float), 1);
-                        decoded = block_rgf; decoded_pitch = 8 * sizeof(float);
-                    } else {
-                        bcdec_bc5(block, block_rg, 8, 0); decoded = block_rg; decoded_pitch = 8;
-                    }
+                    bcdec_bc5(block, block_rg, 8, format == NVN_BC5_SNORM);
+                    decoded = block_rg; decoded_pitch = 8;
                     break;
                 case 6:
                     bcdec_bc6h_half(block, block_rgbh, 3 * 4 * (int)sizeof(uint16_t), fmt.opaque);
