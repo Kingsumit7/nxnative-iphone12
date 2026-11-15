@@ -44,7 +44,7 @@ Community projects build on nxnative with tools to turn your games into apps for
 - **iPhone:** A17 Pro chip or later, with iOS 26 or later.
 - **iPad:** M1 chip or later, with iPadOS 26 or later.
 
-The games' textures are BC-compressed, which older iPhones cannot read. Switch 2 builds are tested on the Mac; check each game's note for device-specific validation.
+Older iPhones lack native BC texture sampling. The compatibility branch adds a CPU decoding path for packaged textures, but GPU-written and large sparse BC paths remain unfinished. No iPhone 12 build or device test has passed, so the published minimum remains A17 Pro. Switch 2 builds are tested on the Mac; check each game's note for device-specific validation.
 
 For a game without a profile, the script writes a survey and tries a provisional build with guessed settings. That build may not start; see [Port another game](docs/development.md#port-another-game).
 

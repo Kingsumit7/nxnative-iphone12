@@ -14,6 +14,7 @@ Block linear is how the Tegra X1 GPU stores textures: the data is not one row af
 |---|---|
 | `nvn_fmt_mtl.h`, `nvn_fmt_mtl.c` | `nvn_fmt_to_mtl()`: NVN format (0x01–0x9C) → Metal pixel format + component remapping. Returns 1 for an exact match, 2 for a substitute (precision, bit order or interpretation differs and a conversion is needed), 0 when Metal has no corresponding format. How each format is handled is written in the comments inside the table. Pure C, no dependency on Metal headers |
 | `nvn_deswizzle.h`, `nvn_deswizzle.c` | `nvn_deswizzle()`: deswizzles one level and one layer from block linear to linear; `nvn_swizzle()`: the reverse, used for round trips in unit tests; `nvn_bl_offset()`: the block-linear address of a single point. Pure C |
+| `nvn_bc_decode.h`, `nvn_bc_decode.c`, `bcdec.h` | CPU BC1–BC7 block decoder. BC6H expands to RGBA16F; BC4/BC5 preserve signed-normalized variants. Pure C |
 | `nvn_deswizzle_gpu.h`, `nvn_deswizzle_gpu.m` | A Metal compute shader version of the same deswizzling algorithm, used by the replay layer when uploading packaged textures; when initialization fails or an unsupported format is encountered, the replay layer falls back to the CPU version |
 | `tests/` | Unit tests |
 
@@ -21,15 +22,16 @@ The offsets of each level and layer within the storage, and the block height and
 
 ## BC textures
 
-Only GPUs with BC compressed textures are supported (`supportsBCTextureCompression` of `MTLDevice`: Apple silicon Macs and the latest iPhones), so BC textures are created and uploaded as BC; there is no decompression path. A device without them is refused at start ([GPUs without BC textures](../../../docs/reference/rendering.md#gpus-without-bc-textures-are-refused-at-start)). A BC texture is never a render target and its raw blocks are not sampled through an uncompressed view (Metal has no such views; Breath of the Wild encodes one 32×32 BC4 texture on the GPU, GitHub issue #4).
+On GPUs without BC compressed texture support, the host expands BC1–BC7 blocks on the CPU during packaged texture upload. BC1–BC5 and BC7 become uncompressed 8-bit textures; BC6H becomes RGBA16Float. sRGB variants keep an sRGB Metal format, and signed BC4/BC5 keep signed-normalized formats. This fallback costs CPU time and additional memory. It does not yet cover every special texture path, including large placement-sparse textures. BC textures are not ordinary render targets. Some games write raw BC blocks through an uncompressed integer view, such as Breath of the Wild's 32×32 BC4 encoder (GitHub issue #4). That GPU-written path is not covered by the CPU fallback.
 
 ## Tests
 
 ```sh
-make -C dm/gfx/tex/tests run       # run t_fmt_mtl and t_tex
+make -C dm/gfx/tex/tests run       # run t_fmt_mtl, t_tex and t_bc_decode
 ```
 
 - **`t_fmt_mtl`**: takes the mapping for every NVN format in 0x01–0x9C and, for every one whose mapping is not 0, actually creates a texture on the local Metal device; all of them must be created successfully. It also checks that every NVN format with sRGB in its name lands on a Metal sRGB format. No game files needed.
+- **`t_bc_decode`**: CPU decoding tests for BC1, BC4, BC5, BC6H and BC7, including cropped edge blocks, signed formats, output formats and invalid input sizes.
 - **`t_tex`**: the deswizzling tests, in several groups:
 
   | Group | Criterion |
