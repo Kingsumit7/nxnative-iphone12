@@ -1,0 +1,57 @@
+name: macOS launcher build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - a14-launcher-prototype
+    paths:
+      - "launcher/**"
+      - ".github/workflows/launcher-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build NXNative Launcher for macOS
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec launcher/project.yml --project launcher
+
+      - name: Build macOS application
+        run: |
+          xcodebuild \
+            -project launcher/NXNativeLauncher.xcodeproj \
+            -scheme NXNativeLauncher \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package application
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release/NXNative Launcher.app"
+          test -d "$APP_PATH"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/NXNative-macOS.zip
+          test -s build/NXNative-macOS.zip
+
+      - name: Upload macOS launcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: NXNative-macOS-Launcher
+          path: build/NXNative-macOS.zip
+          if-no-files-found: error
