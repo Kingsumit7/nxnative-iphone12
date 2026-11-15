@@ -1,110 +1,220 @@
 import SwiftUI
+import AppKit
 import Combine
-import UniformTypeIdentifiers
 
-private enum LauncherConfiguration {
-    static let libraryDirectoryName = "Games"
-    static let libraryFileName = "library.json"
-}
-
-private struct LibraryGame: Identifiable, Codable, Hashable {
+private struct GameSource: Identifiable, Codable, Hashable {
     var id: UUID
-    var title: String
-    var fileName: String
-    var relativePath: String
-    var importedAt: Date
+    var name: String
+    var path: String
+    var addedAt: Date
 
-    var fileURL: URL {
-        Self.libraryDirectory.appendingPathComponent(relativePath)
-    }
-
-    static var libraryDirectory: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent(LauncherConfiguration.libraryDirectoryName, isDirectory: true)
-    }
-
-    static var indexURL: URL {
-        libraryDirectory.appendingPathComponent(LauncherConfiguration.libraryFileName)
-    }
+    var url: URL { URL(fileURLWithPath: path) }
 }
 
 @MainActor
-private final class GameLibrary: ObservableObject {
-    @Published private(set) var games: [LibraryGame] = []
+private final class LauncherModel: ObservableObject {
+    @Published var games: [GameSource] = []
+    @Published var selectedGameID: UUID?
+    @Published var repositoryPath: String
+    @Published var keysPath: String
+    @Published var outputPath: String
+    @Published var log = ""
+    @Published var status = "Ready"
+    @Published var isBuilding = false
     @Published var errorMessage: String?
 
+    private var process: Process?
+
+    private let gamesKey = "library.games"
+    private let repositoryKey = "repository.path"
+    private let keysKey = "keys.path"
+    private let outputKey = "output.path"
+
     init() {
-        load()
+        repositoryPath = UserDefaults.standard.string(forKey: repositoryKey) ?? ""
+        keysPath = UserDefaults.standard.string(forKey: keysKey) ?? ""
+        outputPath = UserDefaults.standard.string(forKey: outputKey)
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("NXNative Builds").path
+
+        if let data = UserDefaults.standard.data(forKey: gamesKey),
+           let saved = try? JSONDecoder().decode([GameSource].self, from: data) {
+            games = saved.filter { FileManager.default.fileExists(atPath: $0.path) }
+        }
+        selectedGameID = games.first?.id
     }
 
-    func importFiles(_ urls: [URL]) {
+    var selectedGame: GameSource? {
+        games.first { $0.id == selectedGameID }
+    }
+
+    func addSources() {
+        let panel = NSOpenPanel()
+        panel.title = "Add Game Sources"
+        panel.message = "Choose NSP, NUP, or an extracted game folder."
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.canCreateDirectories = false
+        guard panel.runModal() == .OK else { return }
+
+        for url in panel.urls {
+            guard !games.contains(where: { $0.path == url.path }) else { continue }
+            let name = url.hasDirectoryPath ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+            let game = GameSource(id: UUID(), name: name, path: url.path, addedAt: Date())
+            games.append(game)
+        }
+        games.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if selectedGameID == nil { selectedGameID = games.first?.id }
+        saveLibrary()
+    }
+
+    func remove(_ game: GameSource) {
+        games.removeAll { $0.id == game.id }
+        if selectedGameID == game.id { selectedGameID = games.first?.id }
+        saveLibrary()
+    }
+
+    func chooseRepository() {
+        let panel = NSOpenPanel()
+        panel.title = "Select NXNative Repository"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            repositoryPath = url.path
+            UserDefaults.standard.set(repositoryPath, forKey: repositoryKey)
+        }
+    }
+
+    func chooseKeys() {
+        let panel = NSOpenPanel()
+        panel.title = "Select prod.keys"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            keysPath = url.path
+            UserDefaults.standard.set(keysPath, forKey: keysKey)
+        }
+    }
+
+    func chooseOutput() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose IPA Output Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            outputPath = url.path
+            UserDefaults.standard.set(outputPath, forKey: outputKey)
+        }
+    }
+
+    func buildSelectedGame() {
+        guard !isBuilding, let game = selectedGame else { return }
+        let script = URL(fileURLWithPath: repositoryPath)
+            .appendingPathComponent("scripts/build_ipa_from_nsp.py")
+        guard FileManager.default.fileExists(atPath: script.path) else {
+            errorMessage = "Select the NXNative repository folder that contains scripts/build_ipa_from_nsp.py."
+            return
+        }
+        guard FileManager.default.fileExists(atPath: game.path) else {
+            errorMessage = "The selected game source no longer exists."
+            return
+        }
+        guard !outputPath.isEmpty else {
+            errorMessage = "Choose an output folder first."
+            return
+        }
+
         do {
             try FileManager.default.createDirectory(
-                at: LibraryGame.libraryDirectory,
+                at: URL(fileURLWithPath: outputPath, isDirectory: true),
                 withIntermediateDirectories: true
             )
-
-            for sourceURL in urls {
-                let hasAccess = sourceURL.startAccessingSecurityScopedResource()
-                defer {
-                    if hasAccess {
-                        sourceURL.stopAccessingSecurityScopedResource()
-                    }
-                }
-
-                let safeName = sourceURL.lastPathComponent
-                let destinationName = "\(UUID().uuidString)-\(safeName)"
-                let destinationURL = LibraryGame.libraryDirectory.appendingPathComponent(destinationName)
-
-                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-
-                let game = LibraryGame(
-                    id: UUID(),
-                    title: sourceURL.deletingPathExtension().lastPathComponent,
-                    fileName: safeName,
-                    relativePath: destinationName,
-                    importedAt: Date()
-                )
-                games.append(game)
-            }
-
-            try save()
-            errorMessage = nil
         } catch {
-            errorMessage = "Import failed: \(error.localizedDescription)"
-            load()
+            errorMessage = "Could not create the output folder: \(error.localizedDescription)"
+            return
         }
-    }
 
-    func remove(_ game: LibraryGame) {
-        do {
-            try FileManager.default.removeItem(at: game.fileURL)
-            games.removeAll { $0.id == game.id }
-            try save()
-        } catch {
-            errorMessage = "Could not remove the selected game: \(error.localizedDescription)"
+        let safeName = game.name.replacingOccurrences(of: "/", with: "-")
+        let ipaURL = URL(fileURLWithPath: outputPath, isDirectory: true)
+            .appendingPathComponent("\(safeName)-unsigned.ipa")
+
+        var arguments = [
+            script.path, game.path,
+            "--platform", "ios",
+            "--progress", "json",
+            "-o", ipaURL.path
+        ]
+        if !keysPath.isEmpty {
+            arguments += ["-k", keysPath]
         }
-    }
 
-    private func load() {
-        do {
-            guard FileManager.default.fileExists(atPath: LibraryGame.indexURL.path) else {
-                games = []
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        task.arguments = ["python3"] + arguments
+        task.currentDirectoryURL = URL(fileURLWithPath: repositoryPath, isDirectory: true)
+
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
                 return
             }
-            let data = try Data(contentsOf: LibraryGame.indexURL)
-            games = try JSONDecoder().decode([LibraryGame].self, from: data)
-                .filter { FileManager.default.fileExists(atPath: $0.fileURL.path) }
-                .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            guard let chunk = String(data: data, encoding: .utf8) else { return }
+            DispatchQueue.main.async {
+                self?.appendOutput(chunk)
+            }
+        }
+
+        log = ""
+        status = "Building \(game.name)…"
+        isBuilding = true
+        process = task
+        do {
+            try task.run()
+            task.terminationHandler = { [weak self] finished in
+                pipe.fileHandleForReading.readabilityHandler = nil
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.isBuilding = false
+                    self.process = nil
+                    if finished.terminationStatus == 0 {
+                        self.status = "Build completed"
+                        self.appendOutput("\nBuild output: \(ipaURL.path)\n")
+                    } else {
+                        self.status = "Build failed, exit code \(finished.terminationStatus)"
+                    }
+                }
+            }
         } catch {
-            games = []
-            errorMessage = "The game library could not be read: \(error.localizedDescription)"
+            pipe.fileHandleForReading.readabilityHandler = nil
+            isBuilding = false
+            process = nil
+            status = "Could not start build"
+            errorMessage = error.localizedDescription
         }
     }
 
-    private func save() throws {
-        let data = try JSONEncoder().encode(games)
-        try data.write(to: LibraryGame.indexURL, options: .atomic)
+    func cancelBuild() {
+        process?.terminate()
+        status = "Stopping build…"
+    }
+
+    private func appendOutput(_ value: String) {
+        log += value
+        if log.count > 100_000 {
+            log = String(log.suffix(80_000))
+        }
+    }
+
+    private func saveLibrary() {
+        if let data = try? JSONEncoder().encode(games) {
+            UserDefaults.standard.set(data, forKey: gamesKey)
+        }
     }
 }
 
@@ -112,143 +222,178 @@ private final class GameLibrary: ObservableObject {
 struct NXNativeLauncherApp: App {
     var body: some Scene {
         WindowGroup {
-            LibraryView()
+            LauncherView()
+                .frame(minWidth: 850, minHeight: 620)
         }
+        .windowStyle(.titleBar)
     }
 }
 
-private struct LibraryView: View {
-    @StateObject private var library = GameLibrary()
-    @State private var showingImporter = false
-    @State private var selectedGame: LibraryGame?
-
-    private let supportedTypes: [UTType] = [
-        UTType(filenameExtension: "nsp") ?? .data,
-        UTType(filenameExtension: "xci") ?? .data,
-        UTType(filenameExtension: "nsz") ?? .data,
-        UTType(filenameExtension: "nup") ?? .data,
-        UTType(filenameExtension: "xcz") ?? .data
-    ]
+private struct LauncherView: View {
+    @StateObject private var model = LauncherModel()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if library.games.isEmpty {
-                    ContentUnavailableView {
-                        Label("Your Library Is Empty", systemImage: "gamecontroller")
-                    } description: {
-                        Text("Import a game file to add it to your library. Game launching is not available in this prototype.")
-                    } actions: {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            HStack(spacing: 0) {
+                libraryPane
+                    .frame(minWidth: 260, idealWidth: 290, maxWidth: 340)
+                Divider()
+                buildPane
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .alert("NXNative Launcher", isPresented: Binding(
+            get: { model.errorMessage != nil },
+            set: { if !$0 { model.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 25, weight: .semibold))
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("NXNative Launcher").font(.title2.weight(.semibold))
+                Text("macOS build environment for iOS game packages")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("Unsigned IPA")
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.quaternary, in: Capsule())
+        }
+        .padding(18)
+    }
+
+    private var libraryPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("GAME SOURCES").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Button(action: model.addSources) {
+                    Label("Add", systemImage: "plus")
+                }
+                .controlSize(.small)
+                .disabled(model.isBuilding)
+            }
+
+            if model.games.isEmpty {
+                ContentUnavailableView(
+                    "No Game Sources",
+                    systemImage: "folder.badge.plus",
+                    description: Text("Add an NSP, NUP, or extracted game folder.")
+                )
+            } else {
+                List(selection: $model.selectedGameID) {
+                    ForEach(model.games) { game in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(game.name).font(.body.weight(.medium))
+                            Text(game.url.lastPathComponent)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .tag(game.id)
+                        .contextMenu {
+                            Button("Remove from Library", role: .destructive) {
+                                model.remove(game)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.sidebar)
+            }
+            Spacer(minLength: 0)
+            Text("Game files stay in their original locations.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+    }
+
+    private var buildPane: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            GroupBox("Build configuration") {
+                VStack(alignment: .leading, spacing: 12) {
+                    pathRow("NXNative repository", path: model.repositoryPath, action: model.chooseRepository)
+                    pathRow("Keys file", path: model.keysPath.isEmpty ? "Optional for supported inputs" : model.keysPath, action: model.chooseKeys)
+                    pathRow("IPA output folder", path: model.outputPath, action: model.chooseOutput)
+                }
+                .padding(.top, 4)
+            }
+
+            GroupBox("Selected game") {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let game = model.selectedGame {
+                        Text(game.name).font(.headline)
+                        Text(game.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else {
+                        Text("Select or add a game source.")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
                         Button {
-                            showingImporter = true
+                            model.buildSelectedGame()
                         } label: {
-                            Label("Import Game", systemImage: "plus")
+                            Label("Build iOS IPA", systemImage: "hammer.fill")
                         }
                         .buttonStyle(.borderedProminent)
-                    }
-                } else {
-                    List {
-                        ForEach(library.games) { game in
-                            Button {
-                                selectedGame = game
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "gamecontroller.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.tint)
-                                        .frame(width: 44, height: 44)
-                                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(game.title)
-                                            .font(.headline)
-                                            .foregroundStyle(.primary)
-                                        Text(game.fileName)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .padding(.vertical, 4)
-                            }
-                            .contextMenu {
-                                Button("Remove from Library", role: .destructive) {
-                                    library.remove(game)
-                                }
-                            }
+                        .disabled(model.selectedGame == nil || model.isBuilding)
+
+                        if model.isBuilding {
+                            Button("Cancel Build", role: .destructive, action: model.cancelBuild)
                         }
-                    }
-                    .listStyle(.insetGrouped)
-                }
-            }
-            .navigationTitle("NXNative")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingImporter = true
-                    } label: {
-                        Label("Import", systemImage: "plus")
+                        Spacer()
+                        Text(model.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.top, 4)
             }
-            .fileImporter(
-                isPresented: $showingImporter,
-                allowedContentTypes: supportedTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                switch result {
-                case .success(let urls):
-                    library.importFiles(urls)
-                case .failure(let error):
-                    library.errorMessage = error.localizedDescription
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("BUILD OUTPUT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ScrollView {
+                    Text(model.log.isEmpty ? "Build output and diagnostics will appear here." : model.log)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(10)
                 }
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
             }
-            .alert("Library", isPresented: Binding(
-                get: { library.errorMessage != nil },
-                set: { if !$0 { library.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { library.errorMessage = nil }
-            } message: {
-                Text(library.errorMessage ?? "")
-            }
-            .sheet(item: $selectedGame) { game in
-                GameDetailsView(game: game)
-            }
+            .frame(maxHeight: .infinity)
         }
-        .tint(.indigo)
+        .padding(16)
     }
-}
 
-private struct GameDetailsView: View {
-    let game: LibraryGame
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Game") {
-                    LabeledContent("Title", value: game.title)
-                    LabeledContent("File", value: game.fileName)
-                    LabeledContent("Imported", value: game.importedAt.formatted(date: .abbreviated, time: .shortened))
-                }
-
-                Section {
-                    Label("Runtime integration pending", systemImage: "info.circle")
-                    Text("This prototype manages imported files only. It does not decrypt, convert, or launch games.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+    private func pathRow(_ title: String, path: String, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.caption.weight(.medium))
+                Text(path.isEmpty ? "Not selected" : path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .navigationTitle("Game Details")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            Spacer(minLength: 4)
+            Button("Choose…", action: action).controlSize(.small)
         }
     }
 }
