@@ -1,0 +1,51 @@
+name: iOS launcher build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - a14-launcher-prototype
+    paths:
+      - "launcher/**"
+      - ".github/workflows/launcher-ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned iOS app
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec launcher/project.yml --project launcher
+
+      - name: Build for iPhone hardware
+        run: |
+          xcodebuild \
+            -project launcher/NXNativeLauncher.xcodeproj \
+            -scheme NXNativeLauncher \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload unsigned app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: NXNative-iOS-unsigned-app
+          path: build/DerivedData/Build/Products/Release-iphoneos/NXNative.app
+          if-no-files-found: error
