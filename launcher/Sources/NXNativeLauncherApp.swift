@@ -174,22 +174,22 @@ private final class LauncherModel: ObservableObject {
         status = "Building \(game.name)…"
         isBuilding = true
         process = task
-        do {
-            try task.run()
-            task.terminationHandler = { [weak self] finished in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.isBuilding = false
-                    self.process = nil
-                    if finished.terminationStatus == 0 {
-                        self.status = "Build completed"
-                        self.appendOutput("\nBuild output: \(ipaURL.path)\n")
-                    } else {
-                        self.status = "Build failed, exit code \(finished.terminationStatus)"
-                    }
+        task.terminationHandler = { [weak self] finished in
+            pipe.fileHandleForReading.readabilityHandler = nil
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBuilding = false
+                self.process = nil
+                if finished.terminationStatus == 0 {
+                    self.status = "Build completed"
+                    self.appendOutput("\nBuild output: \(ipaURL.path)\n")
+                } else {
+                    self.status = "Build failed, exit code \(finished.terminationStatus)"
                 }
             }
+        }
+        do {
+            try task.run()
         } catch {
             pipe.fileHandleForReading.readabilityHandler = nil
             isBuilding = false
@@ -288,11 +288,19 @@ private struct LauncherView: View {
             }
 
             if model.games.isEmpty {
-                ContentUnavailableView(
-                    "No Game Sources",
-                    systemImage: "folder.badge.plus",
-                    description: Text("Add an NSP, NUP, or extracted game folder.")
-                )
+                VStack(spacing: 10) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 30))
+                        .foregroundStyle(.secondary)
+                    Text("No Game Sources").font(.headline)
+                    Text("Add an NSP, NUP, or extracted game folder.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Add Game Sources", action: model.addSources)
+                        .disabled(model.isBuilding)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $model.selectedGameID) {
                     ForEach(model.games) { game in
