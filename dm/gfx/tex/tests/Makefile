@@ -7,7 +7,7 @@ CLANG = clang $(SAN)
 $(O)t_tex: t_tex.c ../nvn_deswizzle.c ../nvn_deswizzle.h ../../nvn/nvn_tex.c ../../nvn/nvn_tex.h
 	$(CLANG) $(CFLAGS) -o $@ t_tex.c ../nvn_deswizzle.c ../../nvn/nvn_tex.c -lm
 
-$(O)t_bc_decode: t_bc_decode.c ../nvn_bc_decode.c ../nvn_bc_decode.h ../../third_party/bcdec/bcdec.h
+$(O)t_bc_decode: t_bc_decode.c ../nvn_bc_decode.c ../nvn_bc_decode.h ../../../third_party/bcdec/bcdec.h
 	$(CLANG) $(CFLAGS) -o $@ t_bc_decode.c ../nvn_bc_decode.c -lm
 run-bc: t_bc_decode
 	./t_bc_decode
