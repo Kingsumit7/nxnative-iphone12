@@ -41,9 +41,10 @@ int nvn_bc_decode_image(uint32_t format, const void *src, size_t src_size,
     blocks_y = ((size_t)height + 3u) / 4u;
     if (blocks_x > SIZE_MAX / blocks_y || blocks_x * blocks_y > SIZE_MAX / block_bytes) return -1;
     required = blocks_x * blocks_y * block_bytes;
-    if (src_size < required || width > SIZE_MAX / (4u * sizeof(float))) return -1;
+    if (src_size < required) return -1;
     min_stride = (size_t)width * 4u * sizeof(float);
-    if (dst_stride < min_stride || height > SIZE_MAX / dst_stride) return -1;
+    if (min_stride / (4u * sizeof(float)) != width ||
+        dst_stride < min_stride || height > SIZE_MAX / dst_stride) return -1;
 
     const uint8_t *input = (const uint8_t *)src;
     for (size_t by = 0; by < blocks_y; ++by) for (size_t bx = 0; bx < blocks_x; ++bx) {
