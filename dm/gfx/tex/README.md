@@ -12,11 +12,11 @@ A CPU BC1–BC7 block decoder is now vendored and exposed through `nvn_bc_decode
 
 | File | Contents |
 |---|---|
-| `nvn_bc_decode.h`, `nvn_bc_decode.c` | CPU block decoder for NVN BC1–BC7 formats, using the vendored `dm/third_party/bcdec` implementation. Outputs RGBA32F pixels and preserves signed/HDR channel values. |
+| `nvn_bc_decode.h`, `nvn_bc_decode.c` | CPU block decoder for NVN BC1–BC7 formats, using the vendored `dm/third_party/bcdec` implementation. Outputs RGBA32F pixels and preserves signed/HDR channel values. |\n| `nvn_bc_to_astc.h`, `nvn_bc_to_astc.cpp` | Standalone BC-to-ASTC 4x4 transcoder. Decodes BC data to RGBA32F, then encodes with the selected ASTC LDR, sRGB, or HDR profile. |
 | `nvn_fmt_mtl.h`, `nvn_fmt_mtl.c` | `nvn_fmt_to_mtl()`: NVN format (0x01–0x9C) to Metal pixel format and component remapping. Returns 1 for an exact match, 2 for a substitute, and 0 when Metal has no direct counterpart. |
 | `nvn_deswizzle.h`, `nvn_deswizzle.c` | `nvn_deswizzle()`: converts one level and layer from block-linear to row-major layout. `nvn_swizzle()` provides the reverse operation for tests. |
 | `nvn_deswizzle_gpu.h`, `nvn_deswizzle_gpu.m` | Metal compute implementation used by the runtime to deswizzle packaged textures. The CPU path remains the fallback. |
-| `tests/` | Format mapping, texture-layout, BC decoder, and ASTC encoder smoke tests. |
+| `tests/` | Format mapping, texture-layout, BC decoder, ASTC encoder, and BC-to-ASTC end-to-end tests. |
 
 The Switch's Tegra X1 stores textures in 64-byte by 8-row GOBs. Levels, layers, block height, and block depth follow the layout rules in `../nvn/nvn_tex.c`. Packaged layout parameters override the automatic dimensions. See [Packaged texture block dimensions and linear storage rows](../../../docs/reference/nvn-objects.md#packaged-texture-block-dimensions-and-linear-storage-rows).
 
@@ -58,4 +58,4 @@ make -C dm/gfx/tex/tests run
 - `t_tex` checks block-linear layout, deswizzling, round trips, and calculated offsets across 2D, array, and 3D textures.
 - `make -C dm/gfx/tex/tests run-bc` checks all NVN BC format IDs, edge-sized images, and invalid input handling. `make -C dm/gfx/tex/tests asan-bc` runs the decoder tests under AddressSanitizer and UndefinedBehaviorSanitizer.
 
-The ASTC encoder smoke test is run by `.github/workflows/astc-encoder-smoke.yml`. It compiles the vendored codec and checks LDR, sRGB, and HDR encoding. These independent tests do not yet validate BC-to-ASTC transcoding or A14 device rendering.
+The ASTC encoder smoke test is run by `.github/workflows/astc-encoder-smoke.yml`. The end-to-end BC-to-ASTC test is run by `.github/workflows/bc-to-astc.yml`. It exercises all 16 NVN BC format IDs, ASTC output sizing, profile validation, truncated input, and insufficient output capacity. These tests validate the CPU transcoding path, not visual quality or A14 device rendering.
