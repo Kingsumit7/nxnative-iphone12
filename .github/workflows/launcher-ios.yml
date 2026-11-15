@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    name: Build unsigned iOS app
+    name: Build unsigned iOS IPA
     runs-on: macos-15
     steps:
       - name: Check out source
@@ -43,9 +43,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Upload unsigned app bundle
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release-iphoneos/NXNative.app"
+          test -d "$APP_PATH"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent build/ipa/Payload build/NXNative-unsigned.ipa
+          test -s build/NXNative-unsigned.ipa
+
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: NXNative-iOS-unsigned-app
-          path: build/DerivedData/Build/Products/Release-iphoneos/NXNative.app
+          name: NXNative-iOS-unsigned-IPA
+          path: build/NXNative-unsigned.ipa
           if-no-files-found: error
