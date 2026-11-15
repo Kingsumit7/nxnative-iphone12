@@ -7,6 +7,20 @@
 #include <limits>
 #include <vector>
 
+extern "C" int nvn_bc_to_astc_format(uint32_t format,
+                                           uint32_t *astc_format,
+                                           uint32_t *astc_profile) {
+    if (!astc_format || !astc_profile || format < 0x41 || format > 0x50 ||
+        format == 0x4A || format == 0x4C || format == 0x4F) return -1;
+
+    const bool srgb = (format >= 0x45 && format <= 0x48) || format == 0x4E;
+    *astc_format = srgb ? 0x87u : 0x79u; // NVN ASTC 4x4 sRGB / linear
+    *astc_profile = srgb ? ASTCENC_PRF_LDR_SRGB :
+                    format == 0x50 ? ASTCENC_PRF_HDR_RGB_LDR_A :
+                                     ASTCENC_PRF_LDR;
+    return 0;
+}
+
 namespace {
 bool profile_matches(uint32_t format, uint32_t profile) {
     const bool srgb = (format >= 0x45 && format <= 0x48) || format == 0x4E;
