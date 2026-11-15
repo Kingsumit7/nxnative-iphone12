@@ -34,6 +34,7 @@ jobs:
     name: Generate and compile A14 iOS sources
     runs-on: macos-15
     env:
+      GAME: "0100000000010000"
       DM_GAME: "0100000000010000"
     steps:
       - name: Check out source
