@@ -32,7 +32,7 @@ The compatibility work covers:
 
 - **Texture formats:** identify BC-compressed inputs and implement a tested conversion path to ASTC or another supported representation. Preserve mip levels, channel layout, alpha, and texture semantics. Do not relabel BC data as ASTC.
 - **Metal API availability:** provide an A14-compatible implementation for functionality that currently depends on Metal 4.
-- **CPU target:** audit compiler flags and generated instructions for A14 compatibility.
+- **CPU target:** use the Apple A14 compiler baseline and verify that generated code does not require newer optional instructions.
 - **Deployment target:** select an iOS minimum version supported by the implementation.
 - **Device validation:** test startup, rendering, input, audio, saves, and sustained gameplay on an actual iPhone 12.
 
