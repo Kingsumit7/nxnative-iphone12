@@ -100,7 +100,7 @@ int nvn_bc_decode_level(int format, uint32_t width, uint32_t height,
                         bcdec_bc4_float(block, block_rf, 4 * (int)sizeof(float), 1);
                         decoded = block_rf; decoded_pitch = 4 * sizeof(float);
                     } else {
-                        bcdec_bc4(block, block_r, 4); decoded = block_r; decoded_pitch = 4;
+                        bcdec_bc4(block, block_r, 4, 0); decoded = block_r; decoded_pitch = 4;
                     }
                     break;
                 case 5:
@@ -108,7 +108,7 @@ int nvn_bc_decode_level(int format, uint32_t width, uint32_t height,
                         bcdec_bc5_float(block, block_rgf, 8 * (int)sizeof(float), 1);
                         decoded = block_rgf; decoded_pitch = 8 * sizeof(float);
                     } else {
-                        bcdec_bc5(block, block_rg, 8); decoded = block_rg; decoded_pitch = 8;
+                        bcdec_bc5(block, block_rg, 8, 0); decoded = block_rg; decoded_pitch = 8;
                     }
                     break;
                 case 6:
