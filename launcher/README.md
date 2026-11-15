@@ -35,7 +35,15 @@ The app bundle is written to:
 build/DerivedData/Build/Products/Release-iphoneos/NXNative.app
 ```
 
-GitHub Actions runs the same build for pushes that change `launcher/` and for manual workflow dispatches. It uploads the unsigned app bundle as a workflow artifact.
+## GitHub Actions artifact
+
+The workflow builds the app without signing and packages it as:
+
+```
+build/NXNative-unsigned.ipa
+```
+
+Open the successful run for the `iOS launcher build` workflow and download the `NXNative-iOS-unsigned-IPA` artifact. The IPA is unsigned. Use a compatible sideloading workflow and your own signing method to install it. The project does not store signing certificates or credentials.
 
 ## Current functionality
 
@@ -65,4 +73,4 @@ The JSON library index is stored beside those files. Removing a library entry de
 
 ## Validation
 
-A successful GitHub Actions compile confirms only that the launcher target builds with the selected SDK. It does not confirm installation, sideloading, import behavior on-device, or game execution. Those require physical-device tests.
+A successful GitHub Actions compile confirms that the launcher target builds with the selected SDK. Successful IPA packaging confirms that the app bundle was archived in an installable IPA layout. Neither result confirms installation, sideloading, import behavior on-device, or game execution. Those require physical-device tests.
