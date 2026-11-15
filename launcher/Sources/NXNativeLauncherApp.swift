@@ -124,7 +124,7 @@ private struct LibraryView: View {
     private let supportedTypes: [UTType] = [
         UTType(filenameExtension: "nsp") ?? .data,
         UTType(filenameExtension: "xci") ?? .data,
-        UTType(filenameExtension: "nuz") ?? .data,
+        UTType(filenameExtension: "nsz") ?? .data,
         UTType(filenameExtension: "nup") ?? .data
     ]
 
