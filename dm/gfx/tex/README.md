@@ -1,48 +1,59 @@
-# dm/gfx/tex — texture format mapping, block-linear deswizzling, BC decompression
+# Texture formats and layout conversion
 
-The part of the graphics layer that deals with texture data, called by the replay layer `../nvn/nvn_mtl.m`. It does three things:
+The texture subsystem is called by the NVN Metal replay layer, `../nvn/nvn_mtl.m`. It currently provides:
 
-1. converts NVN texture format numbers to Metal pixel formats;
-2. unpacks the Switch's "block-linear" layout into an ordinary row-by-row layout;
-3. decompresses BC textures on GPUs that do not support BC compressed textures.
+1. NVN texture format to Metal pixel-format mapping.
+2. CPU deswizzling from the Switch's block-linear layout to row-major texture data.
+3. A Metal compute implementation of the same deswizzling operation.
 
-Block linear is how the Tegra X1 GPU stores textures: the data is not one row after another, but interleaved in small blocks of 64 bytes × 8 rows (GOBs), and several GOBs are then stacked into larger blocks according to a "block height" and a "block depth". The game's packaged texture files are in exactly this layout, and it must be undone before uploading to Metal.
+BC decompression and BC-to-ASTC transcoding are not implemented yet. The current renderer creates BC textures directly and refuses devices without BC texture support. This excludes iPhone 12 and other A14 devices.
 
 ## Files
 
 | File | Contents |
 |---|---|
-| `nvn_fmt_mtl.h`, `nvn_fmt_mtl.c` | `nvn_fmt_to_mtl()`: NVN format (0x01–0x9C) → Metal pixel format + component remapping. Returns 1 for an exact match, 2 for a substitute (precision, bit order or interpretation differs and a conversion is needed), 0 when Metal has no corresponding format. How each format is handled is written in the comments inside the table. Pure C, no dependency on Metal headers |
-| `nvn_deswizzle.h`, `nvn_deswizzle.c` | `nvn_deswizzle()`: deswizzles one level and one layer from block linear to linear; `nvn_swizzle()`: the reverse, used for round trips in unit tests; `nvn_bl_offset()`: the block-linear address of a single point. Pure C |
-| `nvn_deswizzle_gpu.h`, `nvn_deswizzle_gpu.m` | A Metal compute shader version of the same deswizzling algorithm, used by the replay layer when uploading packaged textures; when initialization fails or an unsupported format is encountered, the replay layer falls back to the CPU version |
-| `tests/` | Unit tests |
+| `nvn_fmt_mtl.h`, `nvn_fmt_mtl.c` | `nvn_fmt_to_mtl()`: NVN format (0x01–0x9C) to Metal pixel format and component remapping. Returns 1 for an exact match, 2 for a substitute, and 0 when Metal has no direct counterpart. |
+| `nvn_deswizzle.h`, `nvn_deswizzle.c` | `nvn_deswizzle()`: converts one level and layer from block-linear to row-major layout. `nvn_swizzle()` provides the reverse operation for tests. |
+| `nvn_deswizzle_gpu.h`, `nvn_deswizzle_gpu.m` | Metal compute implementation used by the runtime to deswizzle packaged textures. The CPU path remains the fallback. |
+| `tests/` | Format mapping and texture-layout unit tests. |
 
-The offsets of each level and layer within the storage, and the block height and block depth actually used by each level, are all taken from `../nvn/nvn_tex.c` (`nvn_tex_layout`, `nvn_tex_level_offset`, `nvn_tex_level_tiles`); this directory only does addressing and moving within a level. Packaged parameters override the automatic block dimensions: [Packaged texture block dimensions and linear storage rows](../../../docs/reference/nvn-objects.md#packaged-texture-block-dimensions-and-linear-storage-rows).
+The Switch's Tegra X1 stores textures in 64-byte by 8-row GOBs. Levels, layers, block height, and block depth follow the layout rules in `../nvn/nvn_tex.c`. Packaged layout parameters override the automatic dimensions. See [Packaged texture block dimensions and linear storage rows](../../../docs/reference/nvn-objects.md#packaged-texture-block-dimensions-and-linear-storage-rows).
 
-## BC textures
+## A14 texture compatibility: BC to ASTC
 
-Only GPUs with BC compressed textures are supported (`supportsBCTextureCompression` of `MTLDevice`: Apple silicon Macs and the latest iPhones), so BC textures are created and uploaded as BC; there is no decompression path. A device without them is refused at start ([GPUs without BC textures](../../../docs/reference/rendering.md#gpus-without-bc-textures-are-refused-at-start)). A BC texture is never a render target and its raw blocks are not sampled through an uncompressed view (Metal has no such views; Breath of the Wild encodes one 32×32 BC4 texture on the GPU, GitHub issue #4).
+Apple A14 GPUs support ASTC texture formats but do not expose the BC texture formats required by the current renderer. The existing code maps NVN BC1–BC7 and BC6H formats directly to Metal BC formats. It also checks `MTLDevice.supportsBCTextureCompression` and stops when the device lacks BC support.
+
+The A14 implementation must add a real transcode path. It must not reinterpret BC bytes as ASTC bytes or merely change the Metal pixel-format enum.
+
+The required pipeline is:
+
+1. Read the original Switch texture data and determine its NVN format, dimensions, mip levels, array layers, and color-space interpretation.
+2. Deswizzle the BC source into the expected linear block order.
+3. Decode the BC formats, including BC1–BC5, BC6H, and BC7, while preserving signedness, alpha, and sRGB behavior.
+4. Encode the decoded pixels into an ASTC format supported by A14. Select block dimensions based on the source and quality/performance requirements.
+5. Upload the ASTC blocks with correct row pitches, mip offsets, array slices, and texture-view semantics.
+6. Handle partial re-uploads and sparse texture mappings. The converted representation must remain coherent when the game updates only selected pages or tiles.
+7. Add format-level tests and compare rendered output on both a BC-capable device and an A14 device.
+
+The runtime currently depends on BC storage in several places, including texture creation, uploads, sparse texture mappings, texture views, and BC render-target shadow handling. Those paths must be audited before removing the BC capability check.
+
+ASTC transcoding is an implementation requirement, not a completed feature. Until the decoder, encoder, upload path, and A14 rendering path pass tests, the runtime must continue to reject unsupported BC hardware rather than produce corrupted textures.
+
+## Metal execution requirements
+
+The NVN replay layer currently requires Metal 4 command queues, residency sets, command allocators, argument tables, and MTL4 encoders. The existing classic Metal path is only used for limited non-NVN work such as shader capture. It is not a complete A14 NVN rendering path.
+
+A14 support therefore also requires a complete compatible execution path for command submission, resource residency, synchronization, upload, rendering, and presentation. Lowering the iOS deployment target alone does not provide this functionality.
 
 ## Tests
 
+Run the CPU texture and format tests with:
+
 ```sh
-make -C dm/gfx/tex/tests run       # run t_fmt_mtl and t_tex
+make -C dm/gfx/tex/tests run
 ```
 
-- **`t_fmt_mtl`**: takes the mapping for every NVN format in 0x01–0x9C and, for every one whose mapping is not 0, actually creates a texture on the local Metal device; all of them must be created successfully. It also checks that every NVN format with sRGB in its name lands on a Metal sRGB format. No game files needed.
-- **`t_tex`**: the deswizzling tests, in several groups:
+- `t_fmt_mtl` checks the NVN-to-Metal format table and creates supported mapped formats on the local Metal device.
+- `t_tex` checks block-linear layout, deswizzling, round trips, and calculated offsets across 2D, array, and 3D textures.
 
-  | Group | Criterion |
-  |---|---|
-  | A round trip | Writes random data into each level and layer and reads it back out; must be byte-for-byte equal. Covers 2D, 2D array and 3D, several bytes-per-block values and non-power-of-two sizes |
-  | B address formula | The result of `nvn_bl_offset()` equals the address computed by hand from the public layout rules |
-  | D differential copies | Both copy directions match a byte-address oracle for 1,029 deterministic layouts, including padded pitches, byte tails, sparse mip tails, packaged block dimensions, arrays and cubes; untouched storage and row padding are compared too |
-  | E hand-made 3D | Places markers at hand-computed addresses, checks where they land after deswizzling, and checks block height, block depth and storage size |
-
-  The A round trip can only prove "one-to-one and within bounds"; it cannot prove that the layout formula is right. What backs it up is the hand-computed addresses of groups B and E, and the games that render right.
-
-## Limitations
-
-- `nvn_deswizzle()` does not support multisampled textures, textures with the LINEAR flag (which are linear to begin with) or the BUFFER target; it returns -1 when it encounters them.
-- Cubes and cube arrays are handled as layered textures.
-- The component bit order of the 16-bit packed formats (565 / 5551 / 4444) is mapped according to the format names and has not been checked with real data; they are marked as "substitute" in the format table.
+These tests validate format mappings and texture layouts. They do not yet validate BC-to-ASTC transcoding or A14 device rendering.
