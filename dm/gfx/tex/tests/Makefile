@@ -6,6 +6,17 @@ O ?=
 CLANG = clang $(SAN)
 $(O)t_tex: t_tex.c ../nvn_deswizzle.c ../nvn_deswizzle.h ../../nvn/nvn_tex.c ../../nvn/nvn_tex.h
 	$(CLANG) $(CFLAGS) -o $@ t_tex.c ../nvn_deswizzle.c ../../nvn/nvn_tex.c -lm
+
+$(O)t_bc_decode: t_bc_decode.c ../nvn_bc_decode.c ../nvn_bc_decode.h ../../third_party/bcdec/bcdec.h
+	$(CLANG) $(CFLAGS) -o $@ t_bc_decode.c ../nvn_bc_decode.c -lm
+run-bc: t_bc_decode
+	./t_bc_decode
+.PHONY: run-bc
+asan-bc:
+	mkdir -p asan-bc
+	clang $(CFLAGS) -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -o asan-bc/t_bc_decode t_bc_decode.c ../nvn_bc_decode.c -lm
+	ASAN_OPTIONS=detect_leaks=1 ./asan-bc/t_bc_decode
+.PHONY: asan-bc
 $(O)t_fmt_mtl: t_fmt_mtl.m ../nvn_fmt_mtl.c ../nvn_fmt_mtl.h
 	$(CLANG) $(CFLAGS) -fobjc-arc -o $@ t_fmt_mtl.m ../nvn_fmt_mtl.c -framework Metal -framework Foundation
 run: t_tex t_fmt_mtl
