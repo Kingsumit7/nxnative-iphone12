@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UniformTypeIdentifiers
 
 private enum LauncherConfiguration {
@@ -125,7 +126,8 @@ private struct LibraryView: View {
         UTType(filenameExtension: "nsp") ?? .data,
         UTType(filenameExtension: "xci") ?? .data,
         UTType(filenameExtension: "nsz") ?? .data,
-        UTType(filenameExtension: "nup") ?? .data
+        UTType(filenameExtension: "nup") ?? .data,
+        UTType(filenameExtension: "xcz") ?? .data
     ]
 
     var body: some View {
