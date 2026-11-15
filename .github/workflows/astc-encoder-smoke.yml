@@ -1,0 +1,33 @@
+name: ASTC encoder smoke test
+
+on:
+  push:
+    branches: [a14-launcher-prototype]
+    paths:
+      - "dm/third_party/astc-encoder/**"
+      - "dm/gfx/tex/tests/t_astc_encode.cpp"
+      - ".github/workflows/astc-encoder-smoke.yml"
+  pull_request:
+    paths:
+      - "dm/third_party/astc-encoder/**"
+      - "dm/gfx/tex/tests/t_astc_encode.cpp"
+      - ".github/workflows/astc-encoder-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  encode-smoke:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile ASTC encoder core and smoke test
+        working-directory: dm
+        run: |
+          clang++ -O2 -std=c++14 -fno-fast-math -pthread \
+            -DASTCENC_NEON=0 -DASTCENC_SVE=0 -DASTCENC_SSE=0 \
+            -DASTCENC_AVX=0 -DASTCENC_POPCNT=0 -DASTCENC_F16C=0 \
+            gfx/tex/tests/t_astc_encode.cpp \
+            third_party/astc-encoder/Source/astcenc_*.cpp \
+            -Ithird_party/astc-encoder/Source \
+            -o /tmp/nxnative-astc-encode-test
+      - name: Run LDR, sRGB, and HDR encode tests
+        run: /tmp/nxnative-astc-encode-test
