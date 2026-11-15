@@ -8,6 +8,12 @@
 // RGB channels from sRGB BC formats remain encoded in the sRGB domain so the
 // caller can select an sRGB ASTC destination format without double conversion.
 // dst_row_stride_bytes must be at least width * 4 * sizeof(float).
+#ifdef __cplusplus
+extern "C" {
+#endif
 int nvn_bc_decode_image(uint32_t nvn_format, const void *src, size_t src_size,
                         uint32_t width, uint32_t height,
                         float *dst_rgba, size_t dst_row_stride_bytes);
+#ifdef __cplusplus
+}
+#endif
