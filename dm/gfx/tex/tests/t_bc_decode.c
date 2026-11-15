@@ -5,7 +5,7 @@
 #include <string.h>
 
 static int checks, failures;
-#define CHECK(c, msg) do { ++checks; if (!(c)) { ++failures; printf("FAIL: %s\\n", msg); } } while (0)
+#define CHECK(c, msg) do { ++checks; if (!(c)) { ++failures; printf("FAIL: %s\n", msg); } } while (0)
 
 int main(void) {
     static const uint32_t formats[] = {0x41,0x42,0x43,0x44,0x45,0x46,0x47,0x48,0x49,0x4A,0x4B,0x4C,0x4D,0x4E,0x4F,0x50};
@@ -23,6 +23,6 @@ int main(void) {
     CHECK(nvn_bc_decode_image(0x42, compressed, 7, 4, 4, pixels, 4 * 4 * sizeof(float)) == -1, "truncated block rejected");
     CHECK(nvn_bc_decode_image(0x42, compressed, sizeof compressed, 4, 4, pixels, 4 * sizeof(float)) == -1, "short destination stride rejected");
     CHECK(nvn_bc_decode_image(0x42, compressed, sizeof compressed, 0, 4, pixels, 4 * 4 * sizeof(float)) == -1, "zero width rejected");
-    printf("%s: %d/%d checks\\n", failures ? "FAILED" : "PASS", checks - failures, checks);
+    printf("%s: %d/%d checks\n", failures ? "FAILED" : "PASS", checks - failures, checks);
     return failures ? 1 : 0;
 }
