@@ -9,7 +9,7 @@ This repository is under active development. The iPhone 12 launcher and game-run
 - Target device: iPhone 12, powered by Apple A14 Bionic.
 - Initial direction: develop a native iOS launcher with a game library and a clear path to the NXNative runtime.
 - Build environment: GitHub Actions, with device builds intended for sideloading.
-- Current state: prototype planning and compatibility investigation. The dedicated launcher has not yet been implemented, and iPhone 12 game execution has not been validated.
+- Current state: an initial SwiftUI library prototype and unsigned iOS build workflow are in place. Game-runtime integration and iPhone 12 game execution have not been implemented or validated.
 
 Do not treat this fork as a working iPhone 12 game launcher yet.
 
@@ -28,7 +28,7 @@ The A14 target therefore requires runtime and graphics investigation, not only a
 
 The work is organized into independent milestones:
 
-1. **Launcher foundation**: create a native iOS app shell and game-library interface.
+1. **Launcher foundation**: create a native iOS app shell and game-library interface. An initial SwiftUI prototype now supports file import and local library management.
 2. **Library management**: define safe game-import, metadata, and local-library workflows.
 3. **Runtime integration**: connect the launcher to the existing NXNative build and launch flow where the architecture permits.
 4. **A14 compatibility**: identify and address deployment, CPU, memory, and Metal constraints in the engine.
@@ -38,7 +38,7 @@ A milestone is complete only when its implementation and validation are document
 
 ## Build status
 
-GitHub Actions is the intended build environment. Workflow support and reproducible iOS builds are still part of the development work. Until a workflow is added and verified, this repository does not promise a downloadable or installable IPA.
+The standalone launcher project lives in [`launcher/`](launcher/README.md). GitHub Actions builds an unsigned iOS app bundle when launcher files change or when the workflow runs manually. The workflow artifact is an `.app` bundle, not an installable IPA. The launcher currently imports and organizes files only. It does not launch games.
 
 iOS builds should remain unsigned for user-controlled sideloading. This project will not sign or install software on a user's device.
 
