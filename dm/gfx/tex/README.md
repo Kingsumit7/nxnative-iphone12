@@ -27,7 +27,7 @@ On GPUs without BC compressed texture support, the host expands BC1–BC7 blocks
 ## Tests
 
 ```sh
-make -C dm/gfx/tex/tests run       # run t_fmt_mtl and t_tex
+make -C dm/gfx/tex/tests run       # run t_fmt_mtl, t_tex and t_bc_decode
 ```
 
 - **`t_fmt_mtl`**: takes the mapping for every NVN format in 0x01–0x9C and, for every one whose mapping is not 0, actually creates a texture on the local Metal device; all of them must be created successfully. It also checks that every NVN format with sRGB in its name lands on a Metal sRGB format. No game files needed.
