@@ -31,6 +31,7 @@ make -C dm/gfx/tex/tests run       # run t_fmt_mtl, t_tex and t_bc_decode
 ```
 
 - **`t_fmt_mtl`**: takes the mapping for every NVN format in 0x01–0x9C and, for every one whose mapping is not 0, actually creates a texture on the local Metal device; all of them must be created successfully. It also checks that every NVN format with sRGB in its name lands on a Metal sRGB format. No game files needed.
+- **`t_bc_decode`**: CPU decoding tests for BC1, BC4, BC5, BC6H and BC7, including cropped edge blocks, signed formats, output formats and invalid input sizes.
 - **`t_tex`**: the deswizzling tests, in several groups:
 
   | Group | Criterion |
