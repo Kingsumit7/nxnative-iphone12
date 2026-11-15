@@ -1,0 +1,61 @@
+name: A14 iOS C++ source integration
+
+on:
+  push:
+    branches: [a14-launcher-prototype]
+    paths:
+      - "dm/host/Makefile"
+      - "dm/ios/tools/gen_build.py"
+      - "dm/ios/tools/compile_check.py"
+      - "dm/ios/project.yml"
+      - "dm/gfx/tex/nvn_bc_decode.*"
+      - "dm/gfx/tex/nvn_bc_to_astc.*"
+      - "dm/third_party/astc-encoder/**"
+      - "dm/third_party/bcdec/**"
+      - ".github/workflows/ios-cxx-compile.yml"
+  pull_request:
+    paths:
+      - "dm/host/Makefile"
+      - "dm/ios/tools/gen_build.py"
+      - "dm/ios/tools/compile_check.py"
+      - "dm/ios/project.yml"
+      - "dm/gfx/tex/nvn_bc_decode.*"
+      - "dm/gfx/tex/nvn_bc_to_astc.*"
+      - "dm/third_party/astc-encoder/**"
+      - "dm/third_party/bcdec/**"
+      - ".github/workflows/ios-cxx-compile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-cxx:
+    name: Generate and compile A14 iOS sources
+    runs-on: macos-15
+    env:
+      DM_GAME: "0100000000010000"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Generate iOS source list and C++ build settings
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-gen"
+          python3 dm/ios/tools/gen_build.py dm/host "$RUNNER_TEMP/ios-gen" > "$RUNNER_TEMP/dm.xcconfig"
+          test -f "$RUNNER_TEMP/ios-gen/src/dm__gfx__tex__nvn_bc_to_astc.cpp"
+          test "$(find "$RUNNER_TEMP/ios-gen/src" -name 'astcenc_*.cpp' | wc -l | tr -d ' ')" -gt 0
+          grep -q '^OTHER_CPLUSPLUSFLAGS = .*ASTCENC_NEON=1' "$RUNNER_TEMP/dm.xcconfig"
+          grep -q 'astc-encoder/Source' "$RUNNER_TEMP/dm.xcconfig"
+
+      - name: Compile all iOS sources for A14
+        run: python3 dm/ios/tools/compile_check.py
+
+      - name: Verify A14 CPU baseline
+        run: python3 dm/ios/tests/test_cpu_target.py
