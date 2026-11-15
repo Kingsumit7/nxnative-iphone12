@@ -49,7 +49,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/ios-gen"
           python3 dm/ios/tools/gen_build.py dm/host "$RUNNER_TEMP/ios-gen" > "$RUNNER_TEMP/dm.xcconfig"
-          test -f "$RUNNER_TEMP/ios-gen/src/dm__gfx__tex__nvn_bc_to_astc.cpp"
+          test -f "$RUNNER_TEMP/ios-gen/src/gfx__tex__nvn_bc_to_astc.cpp"
           test "$(find "$RUNNER_TEMP/ios-gen/src" -name 'astcenc_*.cpp' | wc -l | tr -d ' ')" -gt 0
           grep -q '^OTHER_CPLUSPLUSFLAGS = .*ASTCENC_NEON=1' "$RUNNER_TEMP/dm.xcconfig"
           grep -q 'astc-encoder/Source' "$RUNNER_TEMP/dm.xcconfig"
