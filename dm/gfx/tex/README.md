@@ -6,7 +6,7 @@ The texture subsystem is called by the NVN Metal replay layer, `../nvn/nvn_mtl.m
 2. CPU deswizzling from the Switch's block-linear layout to row-major texture data.
 3. A Metal compute implementation of the same deswizzling operation.
 
-A CPU BC1–BC7 block decoder is now vendored and exposed through `nvn_bc_decode_image()`. It decodes the NVN BC format IDs 0x41–0x50 into RGBA32F pixels, including signed BC4/BC5 and signed/unsigned BC6H. The decoder has initial format and bounds tests. Arm ASTC Encoder 5.7.1 is now vendored under `dm/third_party/astc-encoder`, with a standalone LDR, sRGB, and HDR encode smoke test. The encoder is not yet connected to the texture upload path. The current renderer still creates BC textures directly and refuses devices without BC texture support. This excludes iPhone 12 and other A14 devices.
+A CPU BC1–BC7 block decoder is now vendored and exposed through `nvn_bc_decode_image()`. It decodes the NVN BC format IDs 0x41–0x50 into RGBA32F pixels, including signed BC4/BC5 and signed/unsigned BC6H. The decoder has initial format and bounds tests. Arm ASTC Encoder 5.7.1 is now vendored under `dm/third_party/astc-encoder`. The standalone `nvn_bc_to_astc_image()` wrapper now connects the BC decoder to ASTC 4x4 encoding for LDR, sRGB, and HDR profiles. Its independent test covers all NVN BC format IDs 0x41–0x50, output sizing, profile mismatches, truncated input, and insufficient output capacity. The wrapper is not yet connected to the texture upload path. The current renderer still creates BC textures directly and refuses devices without BC texture support. This excludes iPhone 12 and other A14 devices.
 
 ## Files
 
