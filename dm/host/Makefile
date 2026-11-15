@@ -26,7 +26,9 @@ endif
 SRC=main.c loader.c hle.c crash.c probe.c thread.c save_sync.c memstat.m haptics_apple.m pad_switch2_apple.m $(sort $(wildcard hle_*.c)) front_mac.m web_apple.m entry.S
 # NVN null device + nn::vi + the Vulkan layer (dm/gfx/)
 # Sources under dm/gfx, dm/gfx/nvn, dm/gfx/tex, dm/gfx/vk and dm/gfx/gl are included by wildcard (tests/ and metal/ do not go into the host): adding a file does not touch this line
-GFX=$(sort $(wildcard ../gfx/*.c ../gfx/nvn/*.c ../gfx/nvn/*.m ../gfx/nvn/*.S ../gfx/tex/*.c ../gfx/tex/*.m ../gfx/vk/*.m ../gfx/gl/*.m))
+GFX=$(sort $(wildcard ../gfx/*.c ../gfx/nvn/*.c ../gfx/nvn/*.m ../gfx/nvn/*.S ../gfx/tex/*.c ../gfx/tex/*.cpp ../gfx/tex/*.m ../gfx/vk/*.m ../gfx/gl/*.m))
+# Arm ASTC Encoder core. These C++ sources are compiled as part of the host so the iOS source generator sees them too.
+ASTC_SRC=$(sort $(wildcard ../third_party/astc-encoder/Source/astcenc_*.cpp))
 # Third party: libvpx ships the VP8 and VP9 decoder sources (movie decoding, hle_movie.c), with its configuration headers in config/ (arm64, shared by Mac and iOS). Built separately into a static library, file by file, so host changes do not recompile it
 VPX=../third_party/libvpx
 VPX_SRC=$(sort $(shell find $(VPX) -name '*.c'))
@@ -74,23 +76,28 @@ FORCE:
 # the same flags (as clang's one-step compile and link gives each of its jobs the whole line) and its dSYM made from the objects, as clang does after its own link. Each object
 # lists the headers its source read (-MMD; -MP: a removed header is no error), so an edit rebuilds the objects that include it and the link; the Makefile (CFLAGS, these lines)
 # rebuilds them all. The generated headers come first (order-only: the dependency files name them for the sources that read them). The NSP script builds gen/<id>/dmhost and takes it
-HOST_CFLAGS = $(CFLAGS) -I../gfx/nvn/include -I$(dir $(MSL_H)) -I../third_party/vulkan-headers/include -I$(dir $(GAME_H)) -I$(VPX) -I$(DAV1D)/include -I../third_party/stb_vorbis -fobjc-arc
+HOST_CFLAGS = $(CFLAGS) -I../gfx/nvn/include -I$(dir $(MSL_H)) -I../third_party/vulkan-headers/include -I$(dir $(GAME_H)) -I$(VPX) -I$(DAV1D)/include -I../third_party/stb_vorbis -I../third_party/astc-encoder/Source -fobjc-arc
+HOST_CXXFLAGS = $(HOST_CFLAGS) -std=c++14 -pthread -DASTCENC_NEON=1 -DASTCENC_SVE=0 -DASTCENC_SSE=0 -DASTCENC_AVX=0 -DASTCENC_POPCNT=0 -DASTCENC_F16C=0
 HOST_FRAMEWORKS = -framework Cocoa -framework WebKit -framework UserNotifications -framework QuartzCore -framework Metal -framework MetalFX -framework GameController -framework CoreBluetooth -framework IOBluetooth -framework CoreHaptics -framework IOKit -framework AudioToolbox -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers
-HOST_SRC = $(SRC) $(GFX)
-ifneq ($(filter ../%,$(filter-out ../gfx/%,$(HOST_SRC))),)
-$(error host sources outside dm/host and dm/gfx need an object rule: $(filter ../%,$(filter-out ../gfx/%,$(HOST_SRC))))
+HOST_SRC = $(SRC) $(GFX) $(ASTC_SRC)
+HOST_EXTERNAL_SRC = $(filter-out ../gfx/% ../third_party/astc-encoder/Source/%,$(filter ../%,$(HOST_SRC)))
+ifneq ($(HOST_EXTERNAL_SRC),)
+$(error host sources outside dm/host, dm/gfx and the ASTC Encoder core need an object rule: $(HOST_EXTERNAL_SRC))
 endif
 OBJ_DIR = gen/$(GAME)/obj
-HOST_OBJ = $(foreach s,$(HOST_SRC),$(if $(filter ../gfx/%,$(s)),$(OBJ_DIR)/gfx/$(s:../gfx/%=%).o,$(OBJ_DIR)/host/$(s).o))   # the line's order: the link lays code out in it
+HOST_OBJ = $(foreach s,$(HOST_SRC),$(if $(filter ../gfx/%,$(s)),$(OBJ_DIR)/gfx/$(s:../gfx/%=%).o,$(if $(filter ../third_party/astc-encoder/Source/%,$(s)),$(OBJ_DIR)/astc/$(notdir $(s)).o,$(OBJ_DIR)/host/$(s).o)))   # the line's order: the link lays code out in it
 HOST_BIN = gen/$(GAME)/dmhost
 $(OBJ_DIR)/host/%.o: % Makefile ../mac/min_os.mk | $(GAME_H) $(MSL_H)
 	@mkdir -p $(dir $@)
 	clang $(HOST_CFLAGS) -MMD -MP -c $< -o $@
 $(OBJ_DIR)/gfx/%.o: ../gfx/% Makefile ../mac/min_os.mk | $(GAME_H) $(MSL_H)
 	@mkdir -p $(dir $@)
-	clang $(HOST_CFLAGS) -MMD -MP -c $< -o $@
+	$(if $(filter %.cpp,$<),clang++ $(HOST_CXXFLAGS),clang $(HOST_CFLAGS)) -MMD -MP -c $< -o $@
+$(OBJ_DIR)/astc/%.cpp.o: ../third_party/astc-encoder/Source/%.cpp Makefile ../mac/min_os.mk | $(GAME_H) $(MSL_H)
+	@mkdir -p $(dir $@)
+	clang++ $(HOST_CXXFLAGS) -MMD -MP -c $< -o $@
 $(HOST_BIN): $(HOST_OBJ) $(VPX_LIB) $(DAV1D_LIB) Makefile ../mac/min_os.mk
-	clang $(HOST_CFLAGS) -o $@ $(HOST_OBJ) $(VPX_LIB) $(DAV1D_LIB) $(HOST_FRAMEWORKS)
+	clang++ $(HOST_CFLAGS) -o $@ $(HOST_OBJ) $(VPX_LIB) $(DAV1D_LIB) $(HOST_FRAMEWORKS)
 	dsymutil $@
 ifneq ($(strip $(GAME)),)
 -include $(HOST_OBJ:.o=.d)
