@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    name: Build NXNative Launcher for macOS
+    name: Build and test NXNative Launcher for macOS
     runs-on: macos-15
     steps:
       - name: Check out source
@@ -42,12 +42,40 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Package application
+      - name: Validate application bundle
         run: |
           APP_PATH="build/DerivedData/Build/Products/Release/NXNative Launcher.app"
           test -d "$APP_PATH"
+          test -f "$APP_PATH/Contents/Info.plist"
+          plutil -lint "$APP_PATH/Contents/Info.plist"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")
+          test -x "$APP_PATH/Contents/MacOS/$EXECUTABLE"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Contents/Info.plist" | grep -Fx "org.nxnative.launcher"
+          echo "Validated app executable: $EXECUTABLE"
+
+      - name: Launch application smoke test
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release/NXNative Launcher.app"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")
+          open -n "$APP_PATH"
+          for attempt in {1..15}; do
+            if pgrep -x "$EXECUTABLE" >/dev/null; then
+              echo "Launcher process started successfully."
+              pkill -x "$EXECUTABLE" || true
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Launcher process did not start."
+          exit 1
+
+      - name: Package application
+        run: |
+          APP_PATH="build/DerivedData/Build/Products/Release/NXNative Launcher.app"
+          mkdir -p build
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/NXNative-macOS.zip
           test -s build/NXNative-macOS.zip
+          unzip -t build/NXNative-macOS.zip
 
       - name: Upload macOS launcher
         uses: actions/upload-artifact@v4
