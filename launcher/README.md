@@ -1,76 +1,54 @@
-# iOS launcher prototype
+# NXNative Launcher for macOS
 
-This directory contains a standalone SwiftUI app target. It is separate from `dm/ios`, whose existing app is generated for one prepared game and currently has newer platform requirements.
+NXNative Launcher is planned as a native macOS application for managing game sources and building unsigned iOS IPAs with the NXNative repository.
+
+It runs on the Mac. It is not an iOS launcher and does not run games itself.
+
+## Intended workflow
+
+1. Add an NSP, NUP, or supported extracted game directory to the library.
+2. Select a game and configure the required source files, including a keys file when the source format requires one.
+3. Start the iOS build.
+4. Follow progress and diagnostic output in the launcher.
+5. Save the generated unsigned IPA to a chosen location.
+
+The launcher should reference large game files in place where possible. It must not expose key contents in logs or copy game data into the Git repository.
+
+## Build pipeline
+
+The launcher is designed to call the repository's existing build entry point:
+
+```sh
+python3 scripts/build_ipa_from_nsp.py <game-source> --platform ios --progress json -o <output.ipa>
+```
+
+For encrypted NSP input, pass the user's own keys file using the script's `-k` option. NUP and extracted dump inputs follow the input requirements documented by the build script.
+
+The Mac application must invoke the script using an argument array, not a shell-interpolated command string. It should display standard output and errors, parse progress events, support cancellation, and report the final exit status.
 
 ## Requirements
 
-- Xcode with the iOS SDK
-- XcodeGen
-- iOS 17 or later for the launcher interface
-- An iPhone or iPad using an arm64 processor
+The completed launcher will require:
 
-The iOS 17 deployment target is for the SwiftUI launcher only. It does not establish compatibility between the NXNative game runtime and A14 hardware.
+- macOS and Xcode command-line tools
+- Python 3.12 or newer, subject to the build script's current requirements
+- The Python dependencies and native build tools documented by the repository
+- An NXNative source checkout containing `scripts/build_ipa_from_nsp.py`
 
-## Generate and build
+The exact minimum macOS version will be set by the Xcode project and documented after the native macOS target is implemented.
 
-From the repository root:
+## A14 and ASTC compatibility
 
-```sh
-brew install xcodegen
-xcodegen generate --spec launcher/project.yml --project launcher
-xcodebuild \
-  -project launcher/NXNativeLauncher.xcodeproj \
-  -scheme NXNativeLauncher \
-  -configuration Release \
-  -sdk iphoneos \
-  -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DerivedData \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-```
+The launcher selects the iOS build target. It does not make the runtime compatible by itself.
 
-The app bundle is written to:
+The build and runtime work must provide an A14-compatible graphics path. This includes converting BC-compressed textures to ASTC or another supported representation when appropriate, preserving texture data and mipmaps, and replacing Metal 4-only runtime paths with implementations supported by A14 devices.
 
-```
-build/DerivedData/Build/Products/Release-iphoneos/NXNative.app
-```
+Do not treat a successful launcher build, IPA package, or texture conversion command as proof that a game runs correctly. Validate the resulting IPA on an iPhone 12 before making compatibility claims.
 
-## GitHub Actions artifact
+## Signing and installation
 
-The workflow builds the app without signing and packages it as:
+The launcher produces unsigned IPAs. It does not store signing certificates, sign applications, or install applications on a device. Users control their own installation process.
 
-```
-build/NXNative-unsigned.ipa
-```
+## Current status
 
-Open the successful run for the `iOS launcher build` workflow and download the `NXNative-iOS-unsigned-IPA` artifact. The IPA is unsigned. Use a compatible sideloading workflow and your own signing method to install it. The project does not store signing certificates or credentials.
-
-## Current functionality
-
-- Import multiple files through the iOS document picker.
-- Copy imported files into the app's Application Support directory.
-- Persist a local library index.
-- View imported file details.
-- Remove imported files from the library.
-
-The prototype currently does not:
-
-- Build or convert game packages.
-- Decrypt or extract game content.
-- Read game metadata or cover art.
-- Launch a game or load the NXNative runtime.
-- Claim that an imported game is compatible with iPhone 12.
-
-The file importer is a library-management prototype, not a replacement for the upstream packing pipeline. Runtime integration requires a separate design and validation effort.
-
-## Data location
-
-Imported files are copied into the app sandbox:
-
-`Library/Application Support/Games/`
-
-The JSON library index is stored beside those files. Removing a library entry deletes its copied file. The prototype does not access a user's original file after import.
-
-## Validation
-
-A successful GitHub Actions compile confirms that the launcher target builds with the selected SDK. Successful IPA packaging confirms that the app bundle was archived in an installable IPA layout. Neither result confirms installation, sideloading, import behavior on-device, or game execution. Those require physical-device tests.
+This document describes the intended macOS launcher workflow. The existing iOS-only launcher prototype is not the target product and must not be presented as the completed Mac launcher. The macOS application, A14 graphics path, BC-to-ASTC conversion, and physical-device validation remain implementation tasks until their code and tests are in place.
