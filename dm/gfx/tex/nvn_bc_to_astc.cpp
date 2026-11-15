@@ -9,7 +9,7 @@
 
 namespace {
 bool profile_matches(uint32_t format, uint32_t profile) {
-    const bool srgb = format >= 0x45 && format <= 0x48 || format == 0x4E;
+    const bool srgb = (format >= 0x45 && format <= 0x48) || format == 0x4E;
     const bool hdr = format == 0x4F || format == 0x50 ||
                      format == 0x4A || format == 0x4C;
     if (srgb) return profile == ASTCENC_PRF_LDR_SRGB;
@@ -40,9 +40,8 @@ extern "C" int nvn_bc_to_astc_image(uint32_t format, const void *src,
     *dst_size = required;
     if (!dst || dst_capacity < required) return -2;
 
-    if (width > std::numeric_limits<size_t>::max() / (4u * sizeof(float)))
-        return -1;
     const size_t row_stride = static_cast<size_t>(width) * 4u * sizeof(float);
+    if (row_stride / (4u * sizeof(float)) != width) return -1;
     if (height > std::numeric_limits<size_t>::max() / row_stride) return -1;
     std::vector<float> pixels(static_cast<size_t>(width) * height * 4u);
     if (nvn_bc_decode_image(format, src, src_size, width, height,
