@@ -35,7 +35,7 @@ class CpuTarget(unittest.TestCase):
             with self.subTest(where=where, cpu=cpu):
                 m = macros(cpu)
                 for feature in NEEDED: self.assertIn(feature, m, f'{where}: -mcpu={cpu} lacks {feature} (LSE), which the host assembly uses')
-                for feature in ABSENT: self.assertNotIn(feature, m, f'{where}: -mcpu={cpu} promises {feature}, which an M1 lacks')
+                for feature in ABSENT: self.assertNotIn(feature, m, f'{where}: -mcpu={cpu} promises {feature}, which A14 lacks')
 
     def test_both_builds_use_the_a14_target(self):
         targets = self.targets()
