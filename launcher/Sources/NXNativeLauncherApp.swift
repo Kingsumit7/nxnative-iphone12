@@ -53,7 +53,7 @@ private final class LauncherModel: ObservableObject {
     func addSources() {
         let panel = NSOpenPanel()
         panel.title = "Add Game Sources"
-        panel.message = "Choose NSP, NUP, or an extracted game folder."
+        panel.message = "Choose an NSP folder, NUP file, or an extracted game folder."
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
@@ -122,6 +122,10 @@ private final class LauncherModel: ObservableObject {
         }
         guard FileManager.default.fileExists(atPath: game.path) else {
             errorMessage = "The selected game source no longer exists."
+            return
+        }
+        if !game.url.hasDirectoryPath && game.url.pathExtension.lowercased() != "nup" {
+            errorMessage = "For NSP input, select the folder containing the game's NSP files. A single-file input must be a supported NUP container."
             return
         }
         guard !outputPath.isEmpty else {
@@ -339,7 +343,7 @@ private struct LauncherView: View {
                         .font(.system(size: 30))
                         .foregroundStyle(.secondary)
                     Text("No Game Sources").font(.headline)
-                    Text("Add an NSP, NUP, or extracted game folder.")
+                    Text("Add an NSP folder, NUP file, or extracted game folder.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
