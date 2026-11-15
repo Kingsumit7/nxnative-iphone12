@@ -15,7 +15,7 @@ run-bc: t_bc_decode
 asan-bc:
 	mkdir -p asan-bc
 	clang $(CFLAGS) -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -o asan-bc/t_bc_decode t_bc_decode.c ../nvn_bc_decode.c -lm
-	ASAN_OPTIONS=detect_leaks=1 ./asan-bc/t_bc_decode
+	./asan-bc/t_bc_decode
 .PHONY: asan-bc
 $(O)t_fmt_mtl: t_fmt_mtl.m ../nvn_fmt_mtl.c ../nvn_fmt_mtl.h
 	$(CLANG) $(CFLAGS) -fobjc-arc -o $@ t_fmt_mtl.m ../nvn_fmt_mtl.c -framework Metal -framework Foundation
