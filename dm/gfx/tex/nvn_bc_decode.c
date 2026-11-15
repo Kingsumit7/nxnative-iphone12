@@ -52,8 +52,6 @@ static size_t bytes_per_pixel(nvn_bc_output f) {
         case NVN_BC_OUTPUT_RGBA8: return 4;
         case NVN_BC_OUTPUT_R8: return 1;
         case NVN_BC_OUTPUT_RG8: return 2;
-        case NVN_BC_OUTPUT_R32_FLOAT: return 4;
-        case NVN_BC_OUTPUT_RG32_FLOAT: return 8;
         case NVN_BC_OUTPUT_RGBA16_FLOAT: return 8;
         case NVN_BC_OUTPUT_R8_SNORM: return 1;
         case NVN_BC_OUTPUT_RG8_SNORM: return 2;
@@ -75,16 +73,14 @@ int nvn_bc_decode_level(int format, uint32_t width, uint32_t height,
         blocks_x * blocks_y > SIZE_MAX / fmt.block_bytes) return -1;
     size_t required = blocks_x * blocks_y * fmt.block_bytes;
     size_t pixel_bytes = bytes_per_pixel(fmt.output);
-    if (src_size < required || width > SIZE_MAX / pixel_bytes ||
-        dst_pitch < (size_t)width * pixel_bytes) return -1;
+    if (!pixel_bytes || src_size < required || width > SIZE_MAX / pixel_bytes ||
+        dst_pitch < (size_t)width * pixel_bytes || height > SIZE_MAX / dst_pitch) return -1;
 
     const uint8_t *src = (const uint8_t *)src_data;
     uint8_t *dst = (uint8_t *)dst_data;
     uint8_t block_rgba[4 * 4 * 4];
     uint8_t block_r[4 * 4];
     uint8_t block_rg[4 * 4 * 2];
-    float block_rf[4 * 4];
-    float block_rgf[4 * 4 * 2];
     uint16_t block_rgbh[4 * 4 * 3];
 
     for (size_t by = 0; by < blocks_y; by++) {
