@@ -28,7 +28,9 @@ typedef enum {
     NVN_BC_OUTPUT_RG8,
     NVN_BC_OUTPUT_R32_FLOAT,
     NVN_BC_OUTPUT_RG32_FLOAT,
-    NVN_BC_OUTPUT_RGBA16_FLOAT
+    NVN_BC_OUTPUT_RGBA16_FLOAT,
+    NVN_BC_OUTPUT_R8_SNORM,
+    NVN_BC_OUTPUT_RG8_SNORM
 } nvn_bc_output;
 
 /* Returns 0 on success, -1 for an unsupported format or invalid buffer/size.
